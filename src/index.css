@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --radius: 0.75rem;
+
+    --bg: 8 10 20;
+    --bg-2: 12 15 28;
+    --card: 18 22 38;
+    --border: 30 36 56;
+    --text: 245 247 255;
+    --text-2: 188 195 220;
+    --muted: 130 140 170;
+    --accent: 99 102 241;
+    --accent-2: 14 165 233;
+  }
+
+  .light {
+    --bg: 245 247 255;
+    --bg-2: 255 255 255;
+    --card: 255 255 255;
+    --border: 226 232 240;
+    --text: 17 24 39;
+    --text-2: 71 85 105;
+    --muted: 100 116 139;
+    --accent: 79 70 229;
+    --accent-2: 8 145 178;
+  }
+
+  * {
+    border-color: rgb(var(--border));
+  }
+
+  html,
+  body,
+  #root {
+    background: rgb(var(--bg));
+    color: rgb(var(--text));
+    font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+  }
+
+  body {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+}
+
