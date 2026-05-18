@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Download,
-  Facebook,
+  Instagram,
   Loader2,
   Link2,
   Key,
@@ -20,20 +20,24 @@ import {
   Shield,
   Zap,
   Globe,
+  Image as ImageIcon,
+  Video,
 } from "lucide-react";
 import "./App.css";
 
 const DEFAULT_API_KEY = "KAPI-6789ADACCC1091EFDAB55414";
-const API_ENDPOINT = "https://api.komputerz.site/api/v1/download/facebook";
+const API_ENDPOINT = "https://api.komputerz.site/api/v1/download/instagram";
 const STORAGE_KEY = "dmaz_api_key";
 const THEME_KEY = "dmaz_theme";
 const HISTORY_KEY = "dmaz_history";
+
+type MediaKind = "video" | "image" | "audio";
 
 type DownloadVariant = {
   label: string;
   url: string;
   quality?: string;
-  isAudio?: boolean;
+  kind: MediaKind;
 };
 
 type ParsedResult = {
@@ -59,6 +63,19 @@ type ApiResponse = {
   result?: unknown;
 };
 
+// Classify a URL into video/image/audio based on extension or hint.
+function guessKind(url: string, hint?: string): MediaKind {
+  const h = (hint || "").toLowerCase();
+  if (h.includes("audio") || /\.(mp3|m4a|aac|ogg|wav)(\?|$)/i.test(url)) return "audio";
+  if (
+    h.includes("image") ||
+    h.includes("photo") ||
+    /\.(jpe?g|png|webp|heic|gif)(\?|$)/i.test(url)
+  )
+    return "image";
+  return "video";
+}
+
 // Pull useful media URLs out of the (loosely-typed) API response.
 function parseResult(data: ApiResponse): ParsedResult {
   const result = (data.result ?? {}) as Record<string, unknown>;
@@ -73,10 +90,20 @@ function parseResult(data: ApiResponse): ParsedResult {
     get("caption") ||
     get("description") ||
     get("name") ||
-    "Video Facebook";
-  const thumbnail = get("thumbnail") || get("thumb") || get("image") || get("cover");
+    "Media Instagram";
+  const thumbnail =
+    get("thumbnail") ||
+    get("thumb") ||
+    get("cover") ||
+    get("display_url") ||
+    get("image");
   const duration = get("duration") || get("length");
-  const author = get("author") || get("username") || get("user") || get("uploader");
+  const author =
+    get("author") ||
+    get("username") ||
+    get("user") ||
+    get("uploader") ||
+    get("owner");
 
   const variants: DownloadVariant[] = [];
   const seen = new Set<string>();
@@ -86,58 +113,61 @@ function parseResult(data: ApiResponse): ParsedResult {
     variants.push(v);
   };
 
-  // Common shapes returned by various Facebook downloader backends.
+  // Common single-value shapes for Instagram backends.
   const hd = get("hd") || get("video_hd") || get("hd_url");
-  const sd = get("sd") || get("video_sd") || get("sd_url") || get("video") || get("url");
+  const sd = get("sd") || get("video_sd") || get("sd_url") || get("video") || get("video_url");
   const audio = get("audio") || get("mp3") || get("audio_url");
+  const image =
+    get("image_url") ||
+    get("display_url") ||
+    get("image") ||
+    get("photo") ||
+    get("download_url") ||
+    get("url");
 
-  if (hd) pushVariant({ label: "Video HD", url: hd, quality: "HD" });
-  if (sd) pushVariant({ label: "Video SD", url: sd, quality: "SD" });
-  if (audio) pushVariant({ label: "Audio MP3", url: audio, isAudio: true });
+  if (hd) pushVariant({ label: "Video HD", url: hd, quality: "HD", kind: "video" });
+  if (sd) pushVariant({ label: "Video SD", url: sd, quality: "SD", kind: "video" });
+  if (audio) pushVariant({ label: "Audio", url: audio, kind: "audio" });
+  if (image) {
+    const kind = guessKind(image);
+    pushVariant({
+      label: kind === "image" ? "Foto" : "Video",
+      url: image,
+      kind,
+    });
+  }
 
-  // Generic shape: result.media = [{ url, quality, type }]
-  const media = result.media;
-  if (Array.isArray(media)) {
-    for (const item of media as Array<Record<string, unknown>>) {
-      const url = typeof item.url === "string" ? item.url : undefined;
+  // Generic array shapes: media, items, downloads, links
+  for (const key of ["media", "items", "downloads", "download", "links", "resources"]) {
+    const arr = result[key];
+    if (!Array.isArray(arr)) continue;
+    for (const itemRaw of arr as Array<Record<string, unknown>>) {
+      // Carousel items can be nested objects too
+      const item = itemRaw as Record<string, unknown>;
+      const url =
+        (typeof item.url === "string" && item.url) ||
+        (typeof item.link === "string" && item.link) ||
+        (typeof item.download_url === "string" && item.download_url) ||
+        (typeof item.image_url === "string" && item.image_url) ||
+        (typeof item.video_url === "string" && item.video_url) ||
+        (typeof item.display_url === "string" && item.display_url) ||
+        undefined;
       if (!url) continue;
       const quality =
         (typeof item.quality === "string" && item.quality) ||
         (typeof item.resolution === "string" && item.resolution) ||
         (typeof item.label === "string" && item.label) ||
         undefined;
-      const type = typeof item.type === "string" ? item.type.toLowerCase() : "";
-      const isAudio = type.includes("audio") || /\.mp3(\?|$)/i.test(url);
-      pushVariant({
-        label: isAudio ? "Audio" : `Video${quality ? ` ${quality}` : ""}`,
-        url,
-        quality,
-        isAudio,
-      });
-    }
-  }
-
-  // Generic shape: result.links / result.downloads
-  for (const key of ["links", "downloads", "download"]) {
-    const arr = result[key];
-    if (Array.isArray(arr)) {
-      for (const item of arr as Array<Record<string, unknown>>) {
-        const url =
-          typeof item.url === "string"
-            ? item.url
-            : typeof item.link === "string"
-              ? item.link
-              : undefined;
-        if (!url) continue;
-        const quality =
-          (typeof item.quality === "string" && item.quality) ||
-          (typeof item.resolution === "string" && item.resolution) ||
-          undefined;
-        const label =
-          (typeof item.label === "string" && item.label) ||
-          (quality ? `Video ${quality}` : "Download");
-        pushVariant({ label, url, quality });
-      }
+      const type =
+        (typeof item.type === "string" && item.type) ||
+        (typeof item.media_type === "string" && item.media_type) ||
+        "";
+      const kind = guessKind(url, type);
+      const baseLabel =
+        (typeof item.label === "string" && item.label) ||
+        (kind === "image" ? "Foto" : kind === "audio" ? "Audio" : "Video");
+      const finalLabel = quality ? `${baseLabel} ${quality}` : baseLabel;
+      pushVariant({ label: finalLabel, url, quality, kind });
     }
   }
 
@@ -193,11 +223,12 @@ function App() {
     localStorage.setItem(STORAGE_KEY, apiKey);
   }, [apiKey]);
 
-  const isValidFb = useMemo(() => {
+  const isValidIg = useMemo(() => {
     if (!url) return false;
     try {
       const u = new URL(url);
-      return /(^|\.)facebook\.com$/.test(u.hostname) || u.hostname === "fb.watch";
+      if (!/(^|\.)instagram\.com$/.test(u.hostname)) return false;
+      return /^\/(p|reel|reels|tv|stories)\//.test(u.pathname);
     } catch {
       return false;
     }
@@ -210,6 +241,11 @@ function App() {
     } catch {
       setError("Tidak bisa akses clipboard. Tempel manual ya.");
     }
+  };
+
+  const handleExample = () => {
+    setUrl("https://www.instagram.com/p/C5L2NaHMfsV/");
+    setError(null);
   };
 
   const handleClear = () => {
@@ -235,11 +271,13 @@ function App() {
 
     const trimmed = url.trim();
     if (!trimmed) {
-      setError("Tempel link video Facebook dulu.");
+      setError("Tempel link Instagram dulu (post / reel / tv / stories).");
       return;
     }
-    if (!isValidFb) {
-      setError("URL bukan link Facebook. Pastikan dari facebook.com atau fb.watch.");
+    if (!isValidIg) {
+      setError(
+        "URL bukan link Instagram. Format yang didukung: instagram.com/p/, /reel/, /tv/, /stories/.",
+      );
       return;
     }
     if (!apiKey.trim()) {
@@ -266,7 +304,7 @@ function App() {
       const parsed = parseResult(data);
       if (parsed.variants.length === 0) {
         setError(
-          "API merespons tapi tidak ada link download yang terdeteksi. Coba video publik lain.",
+          "API merespons tapi tidak ada link download yang terdeteksi. Coba post publik lain.",
         );
         return;
       }
@@ -275,7 +313,7 @@ function App() {
       // Save to history
       const next: HistoryItem = {
         url: trimmed,
-        title: parsed.title || "Video Facebook",
+        title: parsed.title || "Media Instagram",
         thumbnail: parsed.thumbnail,
         at: Date.now(),
       };
@@ -321,15 +359,15 @@ function App() {
       <header className="relative z-10">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5 md:px-8">
           <a href="/" className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-500 shadow-lg shadow-indigo-500/30">
-              <Download className="h-5 w-5 text-white" strokeWidth={2.5} />
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-pink-500 via-fuchsia-500 to-amber-500 shadow-lg shadow-pink-500/30">
+              <Instagram className="h-5 w-5 text-white" strokeWidth={2.5} />
             </div>
             <div className="leading-tight">
               <div className="text-base font-extrabold tracking-tight">
                 Dmaz<span className="gradient-text">alyxers</span>
               </div>
               <div className="font-mono text-[10px] uppercase tracking-wider text-[rgb(var(--muted))]">
-                Facebook Downloader
+                Instagram Downloader
               </div>
             </div>
           </a>
@@ -371,13 +409,13 @@ function App() {
               Powered by KomputerzAPI
             </span>
             <h1 className="mt-5 text-3xl font-black leading-tight tracking-tight sm:text-4xl md:text-5xl">
-              Download Video{" "}
-              <span className="gradient-text">Facebook</span>
+              Download{" "}
+              <span className="gradient-text">Instagram</span>
               <br className="hidden sm:block" /> Cepat & Tanpa Ribet
             </h1>
             <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-[rgb(var(--text-2))] sm:text-base">
-              Tempel link video Facebook publik, ambil versi HD/SD atau audionya
-              langsung. Tanpa instal apa-apa.
+              Tempel link post, reel, IGTV, atau stories publik — dapat foto,
+              video, atau carousel langsung. Tanpa instal apa-apa.
             </p>
           </div>
 
@@ -389,13 +427,13 @@ function App() {
           >
             <label className="mb-1.5 flex items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))]">
               <Link2 className="h-3.5 w-3.5" />
-              URL Video Facebook
+              URL Instagram
             </label>
-            <div className="group relative flex items-center gap-2 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 px-3 py-1 transition-colors focus-within:border-indigo-400/60">
-              <Facebook className="h-4 w-4 flex-shrink-0 text-indigo-400" />
+            <div className="group relative flex items-center gap-2 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 px-3 py-1 transition-colors focus-within:border-pink-400/60">
+              <Instagram className="h-4 w-4 flex-shrink-0 text-pink-400" />
               <input
                 type="url"
-                placeholder="https://www.facebook.com/..."
+                placeholder="https://www.instagram.com/p/..."
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 disabled={loading}
@@ -425,10 +463,10 @@ function App() {
             </div>
 
             {/* URL validation hint */}
-            {url && !isValidFb && (
+            {url && !isValidIg && (
               <p className="mt-2 flex items-center gap-1.5 px-1 text-[11px] text-amber-400">
                 <AlertCircle className="h-3 w-3" />
-                URL ini bukan dari facebook.com atau fb.watch
+                Format harus instagram.com/p/, /reel/, /tv/, atau /stories/
               </p>
             )}
 
@@ -436,7 +474,7 @@ function App() {
             <button
               type="submit"
               disabled={loading}
-              className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-cyan-500 font-semibold text-white shadow-lg shadow-indigo-500/30 transition-all hover:shadow-indigo-500/50 hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none"
+              className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-pink-500 via-fuchsia-500 to-amber-500 font-semibold text-white shadow-lg shadow-pink-500/30 transition-all hover:shadow-pink-500/50 hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none"
             >
               {loading ? (
                 <>
@@ -446,9 +484,18 @@ function App() {
               ) : (
                 <>
                   <Sparkles className="h-4 w-4" />
-                  Ambil Video
+                  Ambil Media
                 </>
               )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExample}
+              disabled={loading}
+              className="mt-2 w-full rounded-lg px-3 py-1.5 text-[11px] text-[rgb(var(--muted))] transition-colors hover:text-[rgb(var(--text-2))] disabled:opacity-50"
+            >
+              Coba contoh URL
             </button>
 
             {/* API key panel */}
@@ -573,18 +620,27 @@ function App() {
                   {result.variants.map((v, i) => (
                     <div
                       key={v.url}
-                      className="group flex items-center gap-2 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 p-2.5 transition-colors hover:border-indigo-400/40"
+                      className="group flex items-center gap-2 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 p-2.5 transition-colors hover:border-pink-400/40"
                     >
                       <div
-                        className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg font-mono text-[10px] font-bold uppercase ${
-                          v.isAudio
+                        className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${
+                          v.kind === "audio"
                             ? "bg-amber-500/15 text-amber-300"
-                            : v.quality?.toUpperCase().includes("HD")
-                              ? "bg-emerald-500/15 text-emerald-300"
-                              : "bg-indigo-500/15 text-indigo-300"
+                            : v.kind === "image"
+                              ? "bg-fuchsia-500/15 text-fuchsia-300"
+                              : v.quality?.toUpperCase().includes("HD")
+                                ? "bg-emerald-500/15 text-emerald-300"
+                                : "bg-pink-500/15 text-pink-300"
                         }`}
+                        aria-hidden
                       >
-                        {v.isAudio ? "MP3" : v.quality?.toUpperCase().slice(0, 3) || "VID"}
+                        {v.kind === "image" ? (
+                          <ImageIcon className="h-4 w-4" />
+                        ) : v.kind === "audio" ? (
+                          <span className="font-mono text-[10px] font-bold">MP3</span>
+                        ) : (
+                          <Video className="h-4 w-4" />
+                        )}
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-medium text-[rgb(var(--text))]">
@@ -611,7 +667,7 @@ function App() {
                         target="_blank"
                         rel="noreferrer"
                         download
-                        className="flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-cyan-500 px-3 py-2 text-xs font-semibold text-white shadow-md shadow-indigo-500/30 transition-all hover:brightness-110 active:scale-95"
+                        className="flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-r from-pink-500 via-fuchsia-500 to-amber-500 px-3 py-2 text-xs font-semibold text-white shadow-md shadow-pink-500/30 transition-all hover:brightness-110 active:scale-95"
                       >
                         <Download className="h-3.5 w-3.5" />
                         Download
@@ -653,8 +709,8 @@ function App() {
                         loading="lazy"
                       />
                     ) : (
-                      <div className="flex h-10 w-14 flex-shrink-0 items-center justify-center rounded-md bg-indigo-500/10">
-                        <Facebook className="h-4 w-4 text-indigo-400" />
+                      <div className="flex h-10 w-14 flex-shrink-0 items-center justify-center rounded-md bg-pink-500/10">
+                        <Instagram className="h-4 w-4 text-pink-400" />
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
@@ -709,10 +765,10 @@ function App() {
               },
               {
                 icon: Sparkles,
-                title: "HD & Audio",
-                desc: "Tersedia varian HD, SD, sampai audio MP3 — tergantung apa yang dikembalikan oleh sumber.",
-                color: "text-indigo-400",
-                bg: "bg-indigo-500/10",
+                title: "Foto, Video, Reel",
+                desc: "Mendukung post foto, reel, IGTV, dan stories publik — termasuk carousel multi-item.",
+                color: "text-pink-400",
+                bg: "bg-pink-500/10",
               },
             ].map((f) => (
               <div
