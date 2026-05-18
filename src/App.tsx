@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { LucideIcon } from "lucide-react";
 import {
   Download,
   Instagram,
@@ -14,7 +15,7 @@ import {
   Check,
   AlertCircle,
   Trash2,
-  History,
+  History as HistoryIcon,
   ExternalLink,
   Github,
   Shield,
@@ -22,14 +23,199 @@ import {
   Globe,
   Image as ImageIcon,
   Video,
+  Music,
+  Music2,
+  Youtube,
+  HardDrive,
+  Scissors,
+  Settings2,
 } from "lucide-react";
 import "./App.css";
 
 const DEFAULT_API_KEY = "KAPI-6789ADACCC1091EFDAB55414";
-const API_ENDPOINT = "https://api.komputerz.site/api/v1/download/instagram";
+const API_BASE = "https://api.komputerz.site/api/v1/download";
+
 const STORAGE_KEY = "dmaz_api_key";
 const THEME_KEY = "dmaz_theme";
 const HISTORY_KEY = "dmaz_history";
+const PLATFORM_KEY = "dmaz_platform";
+
+type PlatformId =
+  | "instagram"
+  | "tiktok"
+  | "ytmp4"
+  | "ytmp3"
+  | "spotify"
+  | "terabox"
+  | "capcut";
+
+type QualityOption = { label: string; value: string };
+
+type Platform = {
+  id: PlatformId;
+  label: string;
+  short: string;
+  endpoint: string;
+  placeholder: string;
+  description: string;
+  example: string;
+  icon: LucideIcon;
+  gradient: string;
+  accentText: string;
+  accentBorder: string;
+  accentBg: string;
+  validate: (u: URL) => boolean;
+  validHint: string;
+  slowWarning?: string;
+  qualityParam?: {
+    name: string;
+    options: QualityOption[];
+    default: string;
+  };
+};
+
+const PLATFORMS: Platform[] = [
+  {
+    id: "instagram",
+    label: "Instagram",
+    short: "IG",
+    endpoint: "instagram",
+    placeholder: "https://www.instagram.com/p/...",
+    description: "Foto, video, reel, IGTV, stories, carousel",
+    example: "https://www.instagram.com/p/C5L2NaHMfsV/",
+    icon: Instagram,
+    gradient: "from-pink-500 via-fuchsia-500 to-amber-500",
+    accentText: "text-pink-400",
+    accentBorder: "focus-within:border-pink-400/60 hover:border-pink-400/40",
+    accentBg: "bg-pink-500/15 text-pink-300",
+    validate: (u) =>
+      /(^|\.)instagram\.com$/.test(u.hostname) &&
+      /^\/(p|reel|reels|tv|stories)\//.test(u.pathname),
+    validHint: "Format: instagram.com/p/, /reel/, /tv/, /stories/",
+  },
+  {
+    id: "tiktok",
+    label: "TikTok",
+    short: "TT",
+    endpoint: "tiktok",
+    placeholder: "https://www.tiktok.com/@user/video/...",
+    description: "Video tanpa watermark + audio MP3",
+    example: "https://www.tiktok.com/@tiktok/video/7106594312292453675",
+    icon: Music2,
+    gradient: "from-cyan-400 via-pink-500 to-fuchsia-500",
+    accentText: "text-cyan-400",
+    accentBorder: "focus-within:border-cyan-400/60 hover:border-cyan-400/40",
+    accentBg: "bg-cyan-500/15 text-cyan-300",
+    validate: (u) =>
+      /(^|\.)tiktok\.com$/.test(u.hostname) ||
+      u.hostname === "vm.tiktok.com" ||
+      u.hostname === "vt.tiktok.com",
+    validHint: "Format: tiktok.com/@user/video/... atau vt.tiktok.com/...",
+  },
+  {
+    id: "ytmp4",
+    label: "YouTube MP4",
+    short: "YT",
+    endpoint: "ytmp4",
+    placeholder: "https://www.youtube.com/watch?v=...",
+    description: "Video YouTube format MP4",
+    example: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    icon: Youtube,
+    gradient: "from-red-500 to-rose-600",
+    accentText: "text-red-400",
+    accentBorder: "focus-within:border-red-400/60 hover:border-red-400/40",
+    accentBg: "bg-red-500/15 text-red-300",
+    validate: (u) => /(^|\.)(youtube\.com|youtu\.be)$/.test(u.hostname),
+    validHint: "Format: youtube.com/watch?v=... atau youtu.be/...",
+    slowWarning:
+      "YouTube biasanya lambat (20–40 detik). Tunggu ya, jangan refresh.",
+    qualityParam: {
+      name: "quality",
+      default: "720",
+      options: [
+        { label: "360p", value: "360" },
+        { label: "480p", value: "480" },
+        { label: "720p HD", value: "720" },
+        { label: "1080p Full HD", value: "1080" },
+      ],
+    },
+  },
+  {
+    id: "ytmp3",
+    label: "YouTube MP3",
+    short: "MP3",
+    endpoint: "ytmp3",
+    placeholder: "https://www.youtube.com/watch?v=...",
+    description: "Audio YouTube format MP3",
+    example: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    icon: Music,
+    gradient: "from-rose-500 to-amber-500",
+    accentText: "text-rose-400",
+    accentBorder: "focus-within:border-rose-400/60 hover:border-rose-400/40",
+    accentBg: "bg-rose-500/15 text-rose-300",
+    validate: (u) => /(^|\.)(youtube\.com|youtu\.be)$/.test(u.hostname),
+    validHint: "Format: youtube.com/watch?v=... atau youtu.be/...",
+    slowWarning:
+      "YouTube biasanya lambat (20–40 detik). Tunggu ya, jangan refresh.",
+  },
+  {
+    id: "spotify",
+    label: "Spotify",
+    short: "SPT",
+    endpoint: "spotify",
+    placeholder: "https://open.spotify.com/track/...",
+    description: "Preview 30 detik (Spotify DRM)",
+    example: "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT",
+    icon: Music,
+    gradient: "from-emerald-500 to-green-600",
+    accentText: "text-emerald-400",
+    accentBorder:
+      "focus-within:border-emerald-400/60 hover:border-emerald-400/40",
+    accentBg: "bg-emerald-500/15 text-emerald-300",
+    validate: (u) => u.hostname === "open.spotify.com",
+    validHint: "Format: open.spotify.com/track/...",
+  },
+  {
+    id: "terabox",
+    label: "TeraBox",
+    short: "TB",
+    endpoint: "terabox",
+    placeholder: "https://terabox.com/s/...",
+    description: "Download file dari TeraBox publik",
+    example: "https://www.terabox.com/s/1abcdefg",
+    icon: HardDrive,
+    gradient: "from-blue-500 to-indigo-600",
+    accentText: "text-blue-400",
+    accentBorder: "focus-within:border-blue-400/60 hover:border-blue-400/40",
+    accentBg: "bg-blue-500/15 text-blue-300",
+    validate: (u) =>
+      /(^|\.)(terabox\.com|teraboxapp\.com|nephobox\.com|4funbox\.com|mirrobox\.com|momerybox\.com|tibibox\.com|terasharelink\.com)$/.test(
+        u.hostname,
+      ),
+    validHint: "Format: terabox.com/s/... (atau domain TeraBox lain)",
+  },
+  {
+    id: "capcut",
+    label: "CapCut",
+    short: "CC",
+    endpoint: "capcut",
+    placeholder: "https://www.capcut.com/...",
+    description: "Video / template CapCut",
+    example: "https://www.capcut.com/discover/template/abc123",
+    icon: Scissors,
+    gradient: "from-violet-500 to-purple-600",
+    accentText: "text-violet-400",
+    accentBorder:
+      "focus-within:border-violet-400/60 hover:border-violet-400/40",
+    accentBg: "bg-violet-500/15 text-violet-300",
+    validate: (u) => /(^|\.)capcut\.com$/.test(u.hostname),
+    validHint: "Format: capcut.com/...",
+  },
+];
+
+function getPlatform(id: string): Platform {
+  return PLATFORMS.find((p) => p.id === id) ?? PLATFORMS[0];
+}
 
 type MediaKind = "video" | "image" | "audio";
 
@@ -41,15 +227,17 @@ type DownloadVariant = {
 };
 
 type ParsedResult = {
-  title?: string;
+  title: string;
   thumbnail?: string;
   duration?: string;
   author?: string;
+  note?: string;
   variants: DownloadVariant[];
   raw: Record<string, unknown>;
 };
 
 type HistoryItem = {
+  platform: PlatformId;
   url: string;
   title: string;
   thumbnail?: string;
@@ -66,10 +254,12 @@ type ApiResponse = {
 // Classify a URL into video/image/audio based on extension or hint.
 function guessKind(url: string, hint?: string): MediaKind {
   const h = (hint || "").toLowerCase();
-  if (h.includes("audio") || /\.(mp3|m4a|aac|ogg|wav)(\?|$)/i.test(url)) return "audio";
+  if (h.includes("audio") || /\.(mp3|m4a|aac|ogg|wav)(\?|$)/i.test(url))
+    return "audio";
   if (
     h.includes("image") ||
     h.includes("photo") ||
+    h.includes("thumbnail") ||
     /\.(jpe?g|png|webp|heic|gif)(\?|$)/i.test(url)
   )
     return "image";
@@ -90,7 +280,7 @@ function parseResult(data: ApiResponse): ParsedResult {
     get("caption") ||
     get("description") ||
     get("name") ||
-    "Media Instagram";
+    "Media";
   const thumbnail =
     get("thumbnail") ||
     get("thumb") ||
@@ -100,10 +290,12 @@ function parseResult(data: ApiResponse): ParsedResult {
   const duration = get("duration") || get("length");
   const author =
     get("author") ||
+    get("artist") ||
     get("username") ||
     get("user") ||
     get("uploader") ||
     get("owner");
+  const note = get("note") || get("info");
 
   const variants: DownloadVariant[] = [];
   const seen = new Set<string>();
@@ -113,17 +305,17 @@ function parseResult(data: ApiResponse): ParsedResult {
     variants.push(v);
   };
 
-  // Common single-value shapes for Instagram backends.
+  // Common single-value shapes
   const hd = get("hd") || get("video_hd") || get("hd_url");
-  const sd = get("sd") || get("video_sd") || get("sd_url") || get("video") || get("video_url");
+  const sd =
+    get("sd") || get("video_sd") || get("sd_url") || get("video") || get("video_url");
   const audio = get("audio") || get("mp3") || get("audio_url");
   const image =
     get("image_url") ||
     get("display_url") ||
     get("image") ||
     get("photo") ||
-    get("download_url") ||
-    get("url");
+    get("download_url");
 
   if (hd) pushVariant({ label: "Video HD", url: hd, quality: "HD", kind: "video" });
   if (sd) pushVariant({ label: "Video SD", url: sd, quality: "SD", kind: "video" });
@@ -137,13 +329,12 @@ function parseResult(data: ApiResponse): ParsedResult {
     });
   }
 
-  // Generic array shapes: media, items, downloads, links
+  // Generic array shapes
   for (const key of ["media", "items", "downloads", "download", "links", "resources"]) {
     const arr = result[key];
     if (!Array.isArray(arr)) continue;
     for (const itemRaw of arr as Array<Record<string, unknown>>) {
-      // Carousel items can be nested objects too
-      const item = itemRaw as Record<string, unknown>;
+      const item = itemRaw;
       const url =
         (typeof item.url === "string" && item.url) ||
         (typeof item.link === "string" && item.link) ||
@@ -156,7 +347,6 @@ function parseResult(data: ApiResponse): ParsedResult {
       const quality =
         (typeof item.quality === "string" && item.quality) ||
         (typeof item.resolution === "string" && item.resolution) ||
-        (typeof item.label === "string" && item.label) ||
         undefined;
       const type =
         (typeof item.type === "string" && item.type) ||
@@ -166,12 +356,16 @@ function parseResult(data: ApiResponse): ParsedResult {
       const baseLabel =
         (typeof item.label === "string" && item.label) ||
         (kind === "image" ? "Foto" : kind === "audio" ? "Audio" : "Video");
-      const finalLabel = quality ? `${baseLabel} ${quality}` : baseLabel;
+      const finalLabel = quality
+        ? baseLabel.toLowerCase().includes(quality.toLowerCase())
+          ? baseLabel
+          : `${baseLabel} ${quality}`
+        : baseLabel;
       pushVariant({ label: finalLabel, url, quality, kind });
     }
   }
 
-  return { title, thumbnail, duration, author, variants, raw: result };
+  return { title, thumbnail, duration, author, note, variants, raw: result };
 }
 
 function loadHistory(): HistoryItem[] {
@@ -179,7 +373,7 @@ function loadHistory(): HistoryItem[] {
     const raw = localStorage.getItem(HISTORY_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as HistoryItem[];
-    return Array.isArray(parsed) ? parsed.slice(0, 8) : [];
+    return Array.isArray(parsed) ? parsed.slice(0, 12) : [];
   } catch {
     return [];
   }
@@ -187,7 +381,7 @@ function loadHistory(): HistoryItem[] {
 
 function saveHistory(items: HistoryItem[]) {
   try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(items.slice(0, 8)));
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(items.slice(0, 12)));
   } catch {
     // ignore storage errors
   }
@@ -198,15 +392,28 @@ function App() {
     const stored = localStorage.getItem(THEME_KEY);
     return stored === "light" ? "light" : "dark";
   });
+
+  const [platformId, setPlatformId] = useState<PlatformId>(() => {
+    const stored = localStorage.getItem(PLATFORM_KEY);
+    if (stored && PLATFORMS.some((p) => p.id === stored))
+      return stored as PlatformId;
+    return "instagram";
+  });
+  const platform = useMemo(() => getPlatform(platformId), [platformId]);
+
   const [url, setUrl] = useState("");
   const [apiKey, setApiKey] = useState(
     () => localStorage.getItem(STORAGE_KEY) ?? DEFAULT_API_KEY,
+  );
+  const [quality, setQuality] = useState<string>(
+    () => platform.qualityParam?.default ?? "",
   );
   const [showKey, setShowKey] = useState(false);
   const [showKeyPanel, setShowKeyPanel] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ParsedResult | null>(null);
+  const [resultPlatform, setResultPlatform] = useState<Platform | null>(null);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>(() => loadHistory());
 
@@ -223,16 +430,22 @@ function App() {
     localStorage.setItem(STORAGE_KEY, apiKey);
   }, [apiKey]);
 
-  const isValidIg = useMemo(() => {
+  useEffect(() => {
+    localStorage.setItem(PLATFORM_KEY, platformId);
+    // Reset quality to platform default when changing platform
+    setQuality(platform.qualityParam?.default ?? "");
+    setError(null);
+  }, [platformId, platform]);
+
+  const isValidUrl = useMemo(() => {
     if (!url) return false;
     try {
       const u = new URL(url);
-      if (!/(^|\.)instagram\.com$/.test(u.hostname)) return false;
-      return /^\/(p|reel|reels|tv|stories)\//.test(u.pathname);
+      return platform.validate(u);
     } catch {
       return false;
     }
-  }, [url]);
+  }, [url, platform]);
 
   const handlePaste = async () => {
     try {
@@ -244,13 +457,14 @@ function App() {
   };
 
   const handleExample = () => {
-    setUrl("https://www.instagram.com/p/C5L2NaHMfsV/");
+    setUrl(platform.example);
     setError(null);
   };
 
   const handleClear = () => {
     setUrl("");
     setResult(null);
+    setResultPlatform(null);
     setError(null);
   };
 
@@ -268,16 +482,15 @@ function App() {
     e?.preventDefault();
     setError(null);
     setResult(null);
+    setResultPlatform(null);
 
     const trimmed = url.trim();
     if (!trimmed) {
-      setError("Tempel link Instagram dulu (post / reel / tv / stories).");
+      setError(`Tempel link ${platform.label} dulu.`);
       return;
     }
-    if (!isValidIg) {
-      setError(
-        "URL bukan link Instagram. Format yang didukung: instagram.com/p/, /reel/, /tv/, /stories/.",
-      );
+    if (!isValidUrl) {
+      setError(`URL bukan link ${platform.label}. ${platform.validHint}`);
       return;
     }
     if (!apiKey.trim()) {
@@ -287,16 +500,19 @@ function App() {
 
     setLoading(true);
     try {
-      const reqUrl = new URL(API_ENDPOINT);
+      const reqUrl = new URL(`${API_BASE}/${platform.endpoint}`);
       reqUrl.searchParams.set("apikey", apiKey.trim());
       reqUrl.searchParams.set("url", trimmed);
+      if (platform.qualityParam && quality) {
+        reqUrl.searchParams.set(platform.qualityParam.name, quality);
+      }
       const res = await fetch(reqUrl.toString());
       const data = (await res.json()) as ApiResponse;
 
       if (data.status === false || !res.ok) {
         setError(
           data.message ||
-            `Gagal memproses (HTTP ${res.status}). Pastikan video bersifat publik.`,
+            `Gagal memproses (HTTP ${res.status}). Coba pastikan link valid dan publik.`,
         );
         return;
       }
@@ -304,24 +520,27 @@ function App() {
       const parsed = parseResult(data);
       if (parsed.variants.length === 0) {
         setError(
-          "API merespons tapi tidak ada link download yang terdeteksi. Coba post publik lain.",
+          "API merespons tapi tidak ada link download yang terdeteksi. Coba link publik lain.",
         );
         return;
       }
       setResult(parsed);
+      setResultPlatform(platform);
 
-      // Save to history
       const next: HistoryItem = {
+        platform: platform.id,
         url: trimmed,
-        title: parsed.title || "Media Instagram",
+        title: parsed.title,
         thumbnail: parsed.thumbnail,
         at: Date.now(),
       };
-      const updated = [next, ...history.filter((h) => h.url !== trimmed)].slice(0, 8);
+      const updated = [next, ...history.filter((h) => h.url !== trimmed)].slice(
+        0,
+        12,
+      );
       setHistory(updated);
       saveHistory(updated);
 
-      // Smooth scroll to result on next paint
       requestAnimationFrame(() => {
         resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
@@ -347,6 +566,12 @@ function App() {
     saveHistory([]);
   };
 
+  const reuseHistory = (h: HistoryItem) => {
+    setPlatformId(h.platform);
+    setUrl(h.url);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   return (
     <div className="relative min-h-screen overflow-hidden">
       {/* Background layers */}
@@ -359,15 +584,17 @@ function App() {
       <header className="relative z-10">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5 md:px-8">
           <a href="/" className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-pink-500 via-fuchsia-500 to-amber-500 shadow-lg shadow-pink-500/30">
-              <Instagram className="h-5 w-5 text-white" strokeWidth={2.5} />
+            <div
+              className={`flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br ${platform.gradient} shadow-lg shadow-black/30 transition-all`}
+            >
+              <Download className="h-5 w-5 text-white" strokeWidth={2.5} />
             </div>
             <div className="leading-tight">
               <div className="text-base font-extrabold tracking-tight">
                 Dmaz<span className="gradient-text">alyxers</span>
               </div>
               <div className="font-mono text-[10px] uppercase tracking-wider text-[rgb(var(--muted))]">
-                Instagram Downloader
+                All-in-One Downloader
               </div>
             </div>
           </a>
@@ -406,34 +633,77 @@ function App() {
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
               </span>
-              Powered by KomputerzAPI
+              Powered by KomputerzAPI · 7 Platform
             </span>
             <h1 className="mt-5 text-3xl font-black leading-tight tracking-tight sm:text-4xl md:text-5xl">
-              Download{" "}
-              <span className="gradient-text">Instagram</span>
-              <br className="hidden sm:block" /> Cepat & Tanpa Ribet
+              Download dari{" "}
+              <span className="gradient-text">7 Platform</span>
+              <br className="hidden sm:block" /> dalam Satu Tempat
             </h1>
             <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-[rgb(var(--text-2))] sm:text-base">
-              Tempel link post, reel, IGTV, atau stories publik — dapat foto,
-              video, atau carousel langsung. Tanpa instal apa-apa.
+              Instagram, TikTok, YouTube (MP4 & MP3), Spotify, TeraBox, dan
+              CapCut. Pilih platform, tempel link, ambil hasilnya.
             </p>
           </div>
+
+          {/* Platform picker */}
+          <div
+            className="animate-fade-up scrollbar-thin mt-8 -mx-1 overflow-x-auto px-1 pb-1"
+            style={{ animationDelay: "0.05s" }}
+          >
+            <div className="flex w-max gap-2 sm:w-full sm:grid sm:grid-cols-4 lg:grid-cols-7">
+              {PLATFORMS.map((p) => {
+                const selected = p.id === platform.id;
+                const Icon = p.icon;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setPlatformId(p.id)}
+                    className={`group relative flex min-w-[88px] flex-col items-center gap-1.5 rounded-xl border p-2.5 text-center transition-all ${
+                      selected
+                        ? "border-transparent bg-gradient-to-br text-white shadow-lg shadow-black/30 " +
+                          p.gradient
+                        : "border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 text-[rgb(var(--text-2))] hover:border-[rgb(var(--text-2))]/30 hover:text-[rgb(var(--text))]"
+                    }`}
+                    aria-pressed={selected}
+                  >
+                    <Icon className="h-4 w-4" strokeWidth={2.3} />
+                    <span className="text-[11px] font-semibold leading-tight">
+                      {p.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <p
+            className="animate-fade-up mt-2 px-1 text-center text-[11px] text-[rgb(var(--muted))]"
+            style={{ animationDelay: "0.05s" }}
+          >
+            {platform.description}
+          </p>
 
           {/* Form card */}
           <form
             onSubmit={handleSubmit}
-            className="animate-fade-up glass mt-8 rounded-2xl border border-[rgb(var(--border))] p-4 shadow-2xl shadow-indigo-950/20 sm:p-6"
+            className="animate-fade-up glass mt-5 rounded-2xl border border-[rgb(var(--border))] p-4 shadow-2xl shadow-indigo-950/20 sm:p-6"
             style={{ animationDelay: "0.08s" }}
           >
             <label className="mb-1.5 flex items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))]">
               <Link2 className="h-3.5 w-3.5" />
-              URL Instagram
+              URL {platform.label}
             </label>
-            <div className="group relative flex items-center gap-2 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 px-3 py-1 transition-colors focus-within:border-pink-400/60">
-              <Instagram className="h-4 w-4 flex-shrink-0 text-pink-400" />
+            <div
+              className={`group relative flex items-center gap-2 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 px-3 py-1 transition-colors ${platform.accentBorder}`}
+            >
+              <platform.icon
+                className={`h-4 w-4 flex-shrink-0 ${platform.accentText}`}
+              />
               <input
                 type="url"
-                placeholder="https://www.instagram.com/p/..."
+                placeholder={platform.placeholder}
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 disabled={loading}
@@ -455,7 +725,7 @@ function App() {
                 type="button"
                 onClick={handlePaste}
                 disabled={loading}
-                className="flex flex-shrink-0 items-center gap-1 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg))]/60 px-2.5 py-1.5 text-xs font-medium text-[rgb(var(--text-2))] transition-colors hover:border-indigo-400/40 hover:text-[rgb(var(--text))] disabled:opacity-50"
+                className="flex flex-shrink-0 items-center gap-1 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg))]/60 px-2.5 py-1.5 text-xs font-medium text-[rgb(var(--text-2))] transition-colors hover:border-[rgb(var(--text-2))]/40 hover:text-[rgb(var(--text))] disabled:opacity-50"
               >
                 <Clipboard className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Paste</span>
@@ -463,10 +733,44 @@ function App() {
             </div>
 
             {/* URL validation hint */}
-            {url && !isValidIg && (
+            {url && !isValidUrl && (
               <p className="mt-2 flex items-center gap-1.5 px-1 text-[11px] text-amber-400">
                 <AlertCircle className="h-3 w-3" />
-                Format harus instagram.com/p/, /reel/, /tv/, atau /stories/
+                {platform.validHint}
+              </p>
+            )}
+
+            {/* Quality picker for ytmp4 */}
+            {platform.qualityParam && (
+              <div className="mt-3">
+                <label className="mb-1.5 flex items-center gap-1.5 px-1 text-[11px] font-semibold uppercase tracking-wider text-[rgb(var(--muted))]">
+                  <Settings2 className="h-3 w-3" />
+                  Kualitas
+                </label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {platform.qualityParam.options.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setQuality(opt.value)}
+                      className={`rounded-lg border px-2 py-2 text-xs font-medium transition-all ${
+                        quality === opt.value
+                          ? `border-transparent bg-gradient-to-br ${platform.gradient} text-white shadow-md`
+                          : "border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 text-[rgb(var(--text-2))] hover:border-[rgb(var(--text-2))]/30"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Slow warning */}
+            {platform.slowWarning && (
+              <p className="mt-3 flex items-start gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/5 px-2.5 py-2 text-[11px] text-amber-300/90">
+                <Zap className="mt-0.5 h-3 w-3 flex-shrink-0" />
+                {platform.slowWarning}
               </p>
             )}
 
@@ -474,7 +778,7 @@ function App() {
             <button
               type="submit"
               disabled={loading}
-              className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-pink-500 via-fuchsia-500 to-amber-500 font-semibold text-white shadow-lg shadow-pink-500/30 transition-all hover:shadow-pink-500/50 hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none"
+              className={`mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r ${platform.gradient} font-semibold text-white shadow-lg shadow-black/30 transition-all hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none`}
             >
               {loading ? (
                 <>
@@ -484,7 +788,7 @@ function App() {
               ) : (
                 <>
                   <Sparkles className="h-4 w-4" />
-                  Ambil Media
+                  Ambil {platform.id === "ytmp3" || platform.id === "spotify" ? "Audio" : platform.id === "terabox" ? "File" : "Media"}
                 </>
               )}
             </button>
@@ -507,7 +811,8 @@ function App() {
               >
                 <span className="flex items-center gap-1.5">
                   <Key className="h-3.5 w-3.5" />
-                  API Key {apiKey === DEFAULT_API_KEY && "(default — bisa diganti)"}
+                  API Key{" "}
+                  {apiKey === DEFAULT_API_KEY && "(default — bisa diganti)"}
                 </span>
                 <span className="text-[10px] uppercase tracking-wider">
                   {showKeyPanel ? "Tutup" : "Ubah"}
@@ -550,7 +855,9 @@ function App() {
               <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-400" />
               <div className="flex-1">
                 <div className="font-semibold text-red-300">Gagal</div>
-                <div className="mt-0.5 text-red-200/90">{error}</div>
+                <div className="mt-0.5 break-words text-red-200/90">
+                  {error}
+                </div>
               </div>
             </div>
           )}
@@ -571,7 +878,7 @@ function App() {
           )}
 
           {/* Result */}
-          {result && (
+          {result && resultPlatform && (
             <div
               ref={resultRef}
               className="animate-fade-up glass mt-5 overflow-hidden rounded-2xl border border-[rgb(var(--border))] shadow-2xl shadow-indigo-950/20"
@@ -584,10 +891,15 @@ function App() {
                     className="h-full w-full object-cover"
                     loading="lazy"
                     onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).style.display = "none";
+                      (e.currentTarget as HTMLImageElement).style.display =
+                        "none";
                     }}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+                  <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white backdrop-blur">
+                    <resultPlatform.icon className="h-3 w-3" />
+                    {resultPlatform.label}
+                  </div>
                   <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-2">
                     <h2 className="line-clamp-2 text-sm font-semibold text-white drop-shadow-md sm:text-base">
                       {result.title}
@@ -608,11 +920,16 @@ function App() {
                   </h2>
                 )}
                 {result.author && (
-                  <div className="mb-3 text-xs text-[rgb(var(--muted))]">
+                  <div className="mb-1 text-xs text-[rgb(var(--muted))]">
                     oleh{" "}
                     <span className="font-medium text-[rgb(var(--text-2))]">
                       {result.author}
                     </span>
+                  </div>
+                )}
+                {result.note && (
+                  <div className="mb-3 rounded-md border border-amber-500/20 bg-amber-500/5 px-2.5 py-1.5 text-[11px] text-amber-300/90">
+                    {result.note}
                   </div>
                 )}
 
@@ -620,7 +937,7 @@ function App() {
                   {result.variants.map((v, i) => (
                     <div
                       key={v.url}
-                      className="group flex items-center gap-2 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 p-2.5 transition-colors hover:border-pink-400/40"
+                      className={`group flex items-center gap-2 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 p-2.5 transition-colors ${resultPlatform.accentBorder}`}
                     >
                       <div
                         className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${
@@ -628,16 +945,18 @@ function App() {
                             ? "bg-amber-500/15 text-amber-300"
                             : v.kind === "image"
                               ? "bg-fuchsia-500/15 text-fuchsia-300"
-                              : v.quality?.toUpperCase().includes("HD")
+                              : v.quality?.toUpperCase().includes("HD") ||
+                                  v.quality?.includes("1080") ||
+                                  v.quality?.includes("720")
                                 ? "bg-emerald-500/15 text-emerald-300"
-                                : "bg-pink-500/15 text-pink-300"
+                                : resultPlatform.accentBg
                         }`}
                         aria-hidden
                       >
                         {v.kind === "image" ? (
                           <ImageIcon className="h-4 w-4" />
                         ) : v.kind === "audio" ? (
-                          <span className="font-mono text-[10px] font-bold">MP3</span>
+                          <Music className="h-4 w-4" />
                         ) : (
                           <Video className="h-4 w-4" />
                         )}
@@ -667,7 +986,7 @@ function App() {
                         target="_blank"
                         rel="noreferrer"
                         download
-                        className="flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-r from-pink-500 via-fuchsia-500 to-amber-500 px-3 py-2 text-xs font-semibold text-white shadow-md shadow-pink-500/30 transition-all hover:brightness-110 active:scale-95"
+                        className={`flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-r ${resultPlatform.gradient} px-3 py-2 text-xs font-semibold text-white shadow-md shadow-black/30 transition-all hover:brightness-110 active:scale-95`}
                       >
                         <Download className="h-3.5 w-3.5" />
                         Download
@@ -684,7 +1003,7 @@ function App() {
             <div className="mt-10">
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))]">
-                  <History className="h-3.5 w-3.5" />
+                  <HistoryIcon className="h-3.5 w-3.5" />
                   Riwayat ({history.length})
                 </div>
                 <button
@@ -696,50 +1015,67 @@ function App() {
                 </button>
               </div>
               <div className="space-y-1.5">
-                {history.map((h) => (
-                  <div
-                    key={h.url}
-                    className="group flex items-center gap-3 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 p-2.5 transition-colors hover:border-indigo-400/30"
-                  >
-                    {h.thumbnail ? (
-                      <img
-                        src={h.thumbnail}
-                        alt=""
-                        className="h-10 w-14 flex-shrink-0 rounded-md object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="flex h-10 w-14 flex-shrink-0 items-center justify-center rounded-md bg-pink-500/10">
-                        <Instagram className="h-4 w-4 text-pink-400" />
+                {history.map((h) => {
+                  const p = getPlatform(h.platform);
+                  const PIcon = p.icon;
+                  return (
+                    <div
+                      key={h.url + h.at}
+                      className="group flex items-center gap-3 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 p-2.5 transition-colors hover:border-[rgb(var(--text-2))]/30"
+                    >
+                      {h.thumbnail ? (
+                        <div className="relative h-10 w-14 flex-shrink-0">
+                          <img
+                            src={h.thumbnail}
+                            alt=""
+                            className="h-full w-full rounded-md object-cover"
+                            loading="lazy"
+                          />
+                          <div
+                            className={`absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br ${p.gradient} ring-2 ring-[rgb(var(--bg))]`}
+                          >
+                            <PIcon className="h-2.5 w-2.5 text-white" />
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          className={`flex h-10 w-14 flex-shrink-0 items-center justify-center rounded-md bg-gradient-to-br ${p.gradient}`}
+                        >
+                          <PIcon className="h-4 w-4 text-white" />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`rounded-md px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider ${p.accentBg}`}
+                          >
+                            {p.short}
+                          </span>
+                          <div className="truncate text-sm text-[rgb(var(--text))]">
+                            {h.title}
+                          </div>
+                        </div>
+                        <div className="mt-0.5 truncate font-mono text-[10px] text-[rgb(var(--muted))]">
+                          {h.url}
+                        </div>
                       </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm text-[rgb(var(--text))]">
-                        {h.title}
-                      </div>
-                      <div className="truncate font-mono text-[10px] text-[rgb(var(--muted))]">
-                        {h.url}
-                      </div>
+                      <button
+                        onClick={() => reuseHistory(h)}
+                        className="flex-shrink-0 rounded-md px-2 py-1 text-xs text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]"
+                        title="Pakai lagi"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => removeHistoryItem(h.url)}
+                        className="flex-shrink-0 rounded-md px-2 py-1 text-xs text-[rgb(var(--muted))] hover:text-red-300"
+                        title="Hapus"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </div>
-                    <button
-                      onClick={() => {
-                        setUrl(h.url);
-                        window.scrollTo({ top: 0, behavior: "smooth" });
-                      }}
-                      className="flex-shrink-0 rounded-md px-2 py-1 text-xs text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]"
-                      title="Pakai lagi"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={() => removeHistoryItem(h.url)}
-                      className="flex-shrink-0 rounded-md px-2 py-1 text-xs text-[rgb(var(--muted))] hover:text-red-300"
-                      title="Hapus"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -751,29 +1087,29 @@ function App() {
             {[
               {
                 icon: Zap,
-                title: "Cepat",
-                desc: "Proses langsung lewat REST API dengan timeout 30 detik. Tidak ada iklan, tidak ada redirect aneh.",
+                title: "7 Platform",
+                desc: "Instagram, TikTok, YouTube MP4/MP3, Spotify, TeraBox, dan CapCut — semuanya dalam satu UI.",
                 color: "text-amber-400",
                 bg: "bg-amber-500/10",
               },
               {
                 icon: Shield,
                 title: "Aman",
-                desc: "Semua proses jalan di browser kamu. API Key tersimpan di localStorage, bukan di server.",
+                desc: "Semua proses jalan di browser. API Key tersimpan di localStorage, bukan di server kami.",
                 color: "text-emerald-400",
                 bg: "bg-emerald-500/10",
               },
               {
                 icon: Sparkles,
-                title: "Foto, Video, Reel",
-                desc: "Mendukung post foto, reel, IGTV, dan stories publik — termasuk carousel multi-item.",
-                color: "text-pink-400",
-                bg: "bg-pink-500/10",
+                title: "Foto, Video, Audio",
+                desc: "Dukungan otomatis untuk semua tipe media — video HD/SD, MP3, foto, dan carousel.",
+                color: "text-indigo-400",
+                bg: "bg-indigo-500/10",
               },
             ].map((f) => (
               <div
                 key={f.title}
-                className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--card))]/40 p-5 transition-colors hover:border-indigo-400/30"
+                className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--card))]/40 p-5 transition-colors hover:border-[rgb(var(--text-2))]/30"
               >
                 <div
                   className={`flex h-10 w-10 items-center justify-center rounded-xl ${f.bg}`}
@@ -816,7 +1152,7 @@ function App() {
             </a>
             <span className="hidden h-3 w-px bg-[rgb(var(--border))] md:block" />
             <span>
-              Hanya untuk video <b className="text-[rgb(var(--text-2))]">publik</b>
+              Hanya untuk konten <b className="text-[rgb(var(--text-2))]">publik</b>
             </span>
           </div>
         </div>

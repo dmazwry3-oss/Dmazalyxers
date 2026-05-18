@@ -1,15 +1,16 @@
-# Dmazalyxers — Instagram Downloader
+# Dmazalyxers — All-in-One Downloader
 
-Web app modern untuk download media Instagram publik (post foto, video, reel, IGTV, stories, carousel). Tempel link, dapat hasilnya dalam hitungan detik.
+Web app modern untuk download media dari 7 platform (Instagram, TikTok, YouTube MP4, YouTube MP3, Spotify, TeraBox, CapCut) lewat KomputerzAPI.
 
 ## Fitur
 
-- Download foto / video / reel / carousel / IGTV / stories Instagram publik via REST API
+- 7 platform: Instagram, TikTok, YouTube MP4/MP3, Spotify, TeraBox, CapCut
+- Platform picker (tab) dengan validasi URL per-platform
+- YouTube MP4: pilihan quality (360p/480p/720p/1080p)
 - UI modern: glassmorphism, gradient, animasi halus, responsive
 - Dark/light theme dengan preferensi tersimpan
-- Riwayat 8 download terakhir (di localStorage)
+- Riwayat 12 download terakhir (di localStorage, lintas platform)
 - API key tersimpan lokal, bisa diganti kapan saja
-- Validasi URL Instagram sebelum request (`/p/`, `/reel/`, `/tv/`, `/stories/`)
 - Copy link & download langsung satu klik
 
 ## Stack
@@ -17,7 +18,7 @@ Web app modern untuk download media Instagram publik (post foto, video, reel, IG
 - [Vite](https://vitejs.dev/) + [React 18](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
 - [Tailwind CSS](https://tailwindcss.com/) untuk styling
 - [lucide-react](https://lucide.dev/) untuk ikon
-- API: [KomputerzAPI](https://api.komputerz.site/) — endpoint `GET /api/v1/download/instagram`
+- API: [KomputerzAPI](https://api.komputerz.site/) — 7 endpoint download
 
 ## Cara pakai
 
@@ -36,6 +37,6 @@ API key default sudah disertakan untuk akun demo. User bisa override lewat panel
 
 ## Catatan
 
-- Hanya bekerja untuk media Instagram yang bersifat **publik**
+- Hanya bekerja untuk konten yang bersifat **publik**
 - API memiliki rate limit (plan FREE: 200 req/hari, delay 5s antar request)
 - Semua proses jalan di browser; tidak ada backend
