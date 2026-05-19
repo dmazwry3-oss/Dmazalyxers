@@ -20,7 +20,6 @@ import {
   Github,
   Shield,
   Zap,
-  Globe,
   Image as ImageIcon,
   Video,
   Music,
@@ -414,7 +413,6 @@ function App() {
     () => platform.qualityParam?.default ?? "",
   );
   const [showKey, setShowKey] = useState(false);
-  const [showKeyPanel, setShowKeyPanel] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ParsedResult | null>(null);
