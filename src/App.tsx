@@ -31,22 +31,28 @@ import {
   Settings as SettingsIcon,
   X,
   MessageCircle,
-  Lock,
 } from "lucide-react";
 import "./App.css";
 import { BottomSheet } from "./components/BottomSheet";
 import { AuthSheet } from "./components/AuthSheet";
+import { ProfileSheet } from "./components/ProfileSheet";
+import { Toaster } from "./components/Toaster";
 import { UserMenu } from "./components/UserMenu";
 import { getSession, logout, type Session } from "./lib/auth";
+import { toast } from "./lib/toast";
 
 const DEFAULT_API_KEY = "KAPI-6789ADACCC1091EFDAB55414";
 const API_BASE = "https://api.komputerz.site/api/v1/download";
-const ADMIN_PASSWORD = "050504";
 
 const STORAGE_KEY = "dmaz_api_key";
 const THEME_KEY = "dmaz_theme";
-const HISTORY_KEY = "dmaz_history";
 const PLATFORM_KEY = "dmaz_platform";
+
+// History is scoped per-user once you log in (and falls back to an "anon"
+// bucket while logged out). Keeps download history private to each account.
+function historyKey(session: Session | null): string {
+  return session ? `dmaz_history_${session.userId}` : "dmaz_history_anon";
+}
 
 type PlatformId =
   | "instagram"
@@ -376,9 +382,9 @@ function parseResult(data: ApiResponse): ParsedResult {
   return { title, thumbnail, duration, author, note, variants, raw: result };
 }
 
-function loadHistory(): HistoryItem[] {
+function loadHistory(session: Session | null): HistoryItem[] {
   try {
-    const raw = localStorage.getItem(HISTORY_KEY);
+    const raw = localStorage.getItem(historyKey(session));
     if (!raw) return [];
     const parsed = JSON.parse(raw) as HistoryItem[];
     return Array.isArray(parsed) ? parsed.slice(0, 12) : [];
@@ -387,9 +393,12 @@ function loadHistory(): HistoryItem[] {
   }
 }
 
-function saveHistory(items: HistoryItem[]) {
+function saveHistory(session: Session | null, items: HistoryItem[]) {
   try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(items.slice(0, 12)));
+    localStorage.setItem(
+      historyKey(session),
+      JSON.stringify(items.slice(0, 12)),
+    );
   } catch {
     // ignore storage errors
   }
@@ -422,18 +431,17 @@ function App() {
   const [result, setResult] = useState<ParsedResult | null>(null);
   const [resultPlatform, setResultPlatform] = useState<Platform | null>(null);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
-  const [history, setHistory] = useState<HistoryItem[]>(() => loadHistory());
-  
-  // Settings menu states
+  const [history, setHistory] = useState<HistoryItem[]>(() =>
+    loadHistory(getSession()),
+  );
+
+  // Settings menu state (gated by login now — no more legacy admin password)
   const [showSettings, setShowSettings] = useState(false);
-  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
-  const [passwordInput, setPasswordInput] = useState("");
-  const [passwordError, setPasswordError] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   // Account / login state
   const [session, setSession] = useState<Session | null>(() => getSession());
   const [showAuth, setShowAuth] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
 
   const resultRef = useRef<HTMLDivElement | null>(null);
 
@@ -454,6 +462,11 @@ function App() {
     setQuality(platform.qualityParam?.default ?? "");
     setError(null);
   }, [platformId, platform]);
+
+  // Reload history whenever the session identity changes (login/logout/switch).
+  useEffect(() => {
+    setHistory(loadHistory(session));
+  }, [session]);
 
   const isValidUrl = useMemo(() => {
     if (!url) return false;
@@ -557,7 +570,7 @@ function App() {
         12,
       );
       setHistory(updated);
-      saveHistory(updated);
+      saveHistory(session, updated);
 
       requestAnimationFrame(() => {
         resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -576,12 +589,12 @@ function App() {
   const removeHistoryItem = (u: string) => {
     const updated = history.filter((h) => h.url !== u);
     setHistory(updated);
-    saveHistory(updated);
+    saveHistory(session, updated);
   };
 
   const clearHistory = () => {
     setHistory([]);
-    saveHistory([]);
+    saveHistory(session, []);
   };
 
   const reuseHistory = (h: HistoryItem) => {
@@ -591,38 +604,35 @@ function App() {
   };
 
   const handleSettingsClick = () => {
-    // Logged-in users skip the legacy admin password gate.
-    if (session) {
-      setIsAuthenticated(true);
-      setShowSettings(true);
+    if (!session) {
+      // Logged-out users go straight to the auth sheet — no legacy admin
+      // password gate anymore.
+      toast.info("Masuk dulu", "Pengaturan butuh akun yang sudah login.");
+      setShowAuth(true);
       return;
     }
-    setShowPasswordPrompt(true);
-    setPasswordInput("");
-    setPasswordError(false);
-  };
-
-  const handlePasswordSubmit = () => {
-    if (passwordInput === ADMIN_PASSWORD) {
-      setIsAuthenticated(true);
-      setShowPasswordPrompt(false);
-      setShowSettings(true);
-      setPasswordInput("");
-      setPasswordError(false);
-    } else {
-      setPasswordError(true);
-    }
+    setShowSettings(true);
   };
 
   const closeSettings = () => {
     setShowSettings(false);
-    setIsAuthenticated(false);
   };
 
-  const closePasswordPrompt = () => {
-    setShowPasswordPrompt(false);
-    setPasswordInput("");
-    setPasswordError(false);
+  const handleLogout = () => {
+    const username = session?.username;
+    logout();
+    setSession(null);
+    setShowProfile(false);
+    setShowSettings(false);
+    if (username) {
+      toast.info("Sampai jumpa", `Kamu sudah keluar dari akun ${username}.`);
+    }
+  };
+
+  const handleAccountDeleted = () => {
+    setSession(null);
+    setShowProfile(false);
+    setShowSettings(false);
   };
 
   return (
@@ -674,10 +684,8 @@ function App() {
             <UserMenu
               session={session}
               onLoginClick={() => setShowAuth(true)}
-              onLogout={() => {
-                logout();
-                setSession(null);
-              }}
+              onProfileClick={() => setShowProfile(true)}
+              onLogout={handleLogout}
             />
           </nav>
         </div>
@@ -1159,83 +1167,9 @@ function App() {
         </div>
       </footer>
 
-      {/* Password Prompt — bottom sheet on mobile, centered on desktop */}
-      <BottomSheet
-        open={showPasswordPrompt}
-        onClose={closePasswordPrompt}
-        ariaLabel="Masukkan password"
-        maxWidth="sm:max-w-md"
-      >
-        <div className="px-5 pt-2 pb-6 sm:p-6">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md shadow-indigo-500/30">
-                <Lock className="h-5 w-5 text-white" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-[rgb(var(--text))]">
-                  Akses Pengaturan
-                </h3>
-                <p className="mt-0.5 text-[12px] leading-snug text-[rgb(var(--muted))]">
-                  Masukkan password admin atau{" "}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      closePasswordPrompt();
-                      setShowAuth(true);
-                    }}
-                    className="font-semibold text-indigo-400 hover:text-indigo-300"
-                  >
-                    masuk dengan akun
-                  </button>
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={closePasswordPrompt}
-              className="touch-target flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl text-[rgb(var(--muted))] hover:bg-[rgb(var(--bg-2))]/60 hover:text-[rgb(var(--text))]"
-              aria-label="Tutup"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          <div className="mt-5 space-y-3">
-            <input
-              type="password"
-              value={passwordInput}
-              onChange={(e) => {
-                setPasswordInput(e.target.value);
-                setPasswordError(false);
-              }}
-              onKeyDown={(e) => e.key === "Enter" && handlePasswordSubmit()}
-              placeholder="Password admin"
-              className={`w-full rounded-2xl border px-4 py-3 text-sm text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))] focus:outline-none ${
-                passwordError
-                  ? "border-red-500/50 bg-red-500/5"
-                  : "border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 focus:border-indigo-400/60"
-              }`}
-              autoFocus
-            />
-            {passwordError && (
-              <p className="flex items-center gap-1.5 text-xs text-red-400">
-                <AlertCircle className="h-3.5 w-3.5" />
-                Password salah, coba lagi
-              </p>
-            )}
-            <button
-              onClick={handlePasswordSubmit}
-              className="touch-target flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 font-semibold text-white shadow-lg shadow-indigo-500/30 transition-all hover:brightness-110 active:scale-[0.99]"
-            >
-              Buka Pengaturan
-            </button>
-          </div>
-        </div>
-      </BottomSheet>
-
       {/* Settings — bottom sheet on mobile, centered on desktop */}
       <BottomSheet
-        open={showSettings && isAuthenticated}
+        open={showSettings && !!session}
         onClose={closeSettings}
         ariaLabel="Pengaturan"
         maxWidth="sm:max-w-lg"
@@ -1250,7 +1184,7 @@ function App() {
                 Pengaturan
               </h3>
               <p className="mt-0.5 text-[12px] text-[rgb(var(--muted))]">
-                Kelola API key & kontak
+                Kelola akun, API key, & kontak
               </p>
             </div>
           </div>
@@ -1264,6 +1198,33 @@ function App() {
         </div>
 
         <div className="space-y-6 p-5 sm:p-6">
+          {/* Account Section */}
+          {session && (
+            <button
+              type="button"
+              onClick={() => {
+                closeSettings();
+                setShowProfile(true);
+              }}
+              className="touch-target flex w-full items-center gap-3 rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 p-3 text-left transition-all hover:border-indigo-400/40 active:scale-[0.99]"
+            >
+              <span
+                className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${session.avatarColor} text-sm font-bold text-white shadow-md shadow-black/30`}
+              >
+                {session.username.slice(0, 2).toUpperCase()}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold text-[rgb(var(--text))]">
+                  {session.username}
+                </div>
+                <div className="truncate text-xs text-[rgb(var(--text-2))]">
+                  Profil & keamanan
+                </div>
+              </div>
+              <ExternalLink className="h-4 w-4 flex-shrink-0 text-[rgb(var(--muted))]" />
+            </button>
+          )}
+
           {/* API Key Section */}
           <div>
             <label className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-[rgb(var(--text))]">
@@ -1359,6 +1320,20 @@ function App() {
           setShowAuth(false);
         }}
       />
+
+      {/* Profile / account management sheet */}
+      {session && (
+        <ProfileSheet
+          open={showProfile}
+          session={session}
+          onClose={() => setShowProfile(false)}
+          onSessionUpdate={(next) => setSession(next)}
+          onAccountDeleted={handleAccountDeleted}
+        />
+      )}
+
+      {/* Global toast notifications */}
+      <Toaster />
     </div>
   );
 }

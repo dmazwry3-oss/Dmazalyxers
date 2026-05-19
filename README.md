@@ -9,9 +9,22 @@ Web app modern untuk download media dari 7 platform (Instagram, TikTok, YouTube 
 - YouTube MP4: pilihan quality (360p/480p/720p/1080p)
 - UI modern: glassmorphism, gradient, animasi halus, responsive
 - Dark/light theme dengan preferensi tersimpan
-- Riwayat 12 download terakhir (di localStorage, lintas platform)
+- Riwayat 12 download terakhir (per-user) di localStorage
 - API key tersimpan lokal, bisa diganti kapan saja
 - Copy link & download langsung satu klik
+
+### Akun & keamanan
+
+- Login & Register lokal (tanpa server) dengan **PBKDF2-SHA-256, 100k iterasi**
+  dan salt unik per user
+- **Pertanyaan keamanan** untuk reset password kalau lupa
+- **Rate-limit & lockout 5 menit** setelah 5 percobaan login gagal
+- **"Ingat saya"** — sesi persistent (localStorage) atau sementara (sessionStorage)
+- **Caps Lock detector** di field password
+- **Strength meter + checklist live** saat membuat / mengganti password
+- **Profil & keamanan**: edit username/email, ganti warna avatar (8 gradient),
+  ganti password, hapus akun (dengan konfirmasi ketik ulang username)
+- **Toast notifications** untuk feedback aksi akun
 
 ## Stack
 
