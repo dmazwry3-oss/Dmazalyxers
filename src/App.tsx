@@ -29,11 +29,16 @@ import {
   HardDrive,
   Scissors,
   Settings2,
+  MoreVertical,
+  X,
+  MessageCircle,
+  Lock,
 } from "lucide-react";
 import "./App.css";
 
 const DEFAULT_API_KEY = "KAPI-6789ADACCC1091EFDAB55414";
 const API_BASE = "https://api.komputerz.site/api/v1/download";
+const ADMIN_PASSWORD = "050504";
 
 const STORAGE_KEY = "dmaz_api_key";
 const THEME_KEY = "dmaz_theme";
@@ -416,6 +421,13 @@ function App() {
   const [resultPlatform, setResultPlatform] = useState<Platform | null>(null);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>(() => loadHistory());
+  
+  // Settings menu states
+  const [showSettings, setShowSettings] = useState(false);
+  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [passwordError, setPasswordError] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const resultRef = useRef<HTMLDivElement | null>(null);
 
@@ -572,6 +584,35 @@ function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const handleSettingsClick = () => {
+    setShowPasswordPrompt(true);
+    setPasswordInput("");
+    setPasswordError(false);
+  };
+
+  const handlePasswordSubmit = () => {
+    if (passwordInput === ADMIN_PASSWORD) {
+      setIsAuthenticated(true);
+      setShowPasswordPrompt(false);
+      setShowSettings(true);
+      setPasswordInput("");
+      setPasswordError(false);
+    } else {
+      setPasswordError(true);
+    }
+  };
+
+  const closeSettings = () => {
+    setShowSettings(false);
+    setIsAuthenticated(false);
+  };
+
+  const closePasswordPrompt = () => {
+    setShowPasswordPrompt(false);
+    setPasswordInput("");
+    setPasswordError(false);
+  };
+
   return (
     <div className="relative min-h-screen overflow-hidden">
       {/* Background layers */}
@@ -600,15 +641,6 @@ function App() {
           </a>
 
           <nav className="flex items-center gap-2">
-            <a
-              href="https://api.komputerz.site/"
-              target="_blank"
-              rel="noreferrer"
-              className="hidden items-center gap-1.5 rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/60 px-3 py-1.5 text-xs font-medium text-[rgb(var(--text-2))] transition-colors hover:border-indigo-400/40 hover:text-[rgb(var(--text))] sm:flex"
-            >
-              <Globe className="h-3.5 w-3.5" />
-              KomputerzAPI
-            </a>
             <button
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               className="flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/60 text-[rgb(var(--text-2))] transition-colors hover:border-indigo-400/40 hover:text-[rgb(var(--text))]"
@@ -620,6 +652,13 @@ function App() {
                 <Moon className="h-4 w-4" />
               )}
             </button>
+            <button
+              onClick={handleSettingsClick}
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/60 text-[rgb(var(--text-2))] transition-colors hover:border-indigo-400/40 hover:text-[rgb(var(--text))]"
+              aria-label="Settings"
+            >
+              <MoreVertical className="h-4 w-4" />
+            </button>
           </nav>
         </div>
       </header>
@@ -628,14 +667,7 @@ function App() {
       <main className="relative z-10">
         <section className="mx-auto max-w-3xl px-5 pb-12 pt-6 md:px-8 md:pt-12">
           <div className="animate-fade-up text-center">
-            <span className="inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-wider text-indigo-300">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
-              </span>
-              Powered by KomputerzAPI · 7 Platform
-            </span>
-            <h1 className="mt-5 text-3xl font-black leading-tight tracking-tight sm:text-4xl md:text-5xl">
+            <h1 className="text-3xl font-black leading-tight tracking-tight sm:text-4xl md:text-5xl">
               Download dari{" "}
               <span className="gradient-text">7 Platform</span>
               <br className="hidden sm:block" /> dalam Satu Tempat
@@ -801,49 +833,6 @@ function App() {
             >
               Coba contoh URL
             </button>
-
-            {/* API key panel */}
-            <div className="mt-4 border-t border-[rgb(var(--border))] pt-3">
-              <button
-                type="button"
-                onClick={() => setShowKeyPanel((v) => !v)}
-                className="flex w-full items-center justify-between rounded-lg px-1 py-1.5 text-xs font-medium text-[rgb(var(--muted))] transition-colors hover:text-[rgb(var(--text-2))]"
-              >
-                <span className="flex items-center gap-1.5">
-                  <Key className="h-3.5 w-3.5" />
-                  API Key{" "}
-                  {apiKey === DEFAULT_API_KEY && "(default — bisa diganti)"}
-                </span>
-                <span className="text-[10px] uppercase tracking-wider">
-                  {showKeyPanel ? "Tutup" : "Ubah"}
-                </span>
-              </button>
-              {showKeyPanel && (
-                <div className="mt-2 flex items-center gap-2 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 px-3 py-1">
-                  <input
-                    type={showKey ? "text" : "password"}
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="KAPI-xxxxxxxxxxxxxxxxxxxxxxxx"
-                    className="min-w-0 flex-1 bg-transparent py-2 font-mono text-xs text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))] focus:outline-none"
-                    spellCheck={false}
-                    autoComplete="off"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowKey((v) => !v)}
-                    className="flex-shrink-0 rounded-md px-2 py-1 text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]"
-                    aria-label={showKey ? "Hide key" : "Show key"}
-                  >
-                    {showKey ? (
-                      <EyeOff className="h-3.5 w-3.5" />
-                    ) : (
-                      <Eye className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                </div>
-              )}
-            </div>
           </form>
 
           {/* Error banner */}
@@ -1130,15 +1119,7 @@ function App() {
       <footer className="relative z-10 border-t border-[rgb(var(--border))]">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-5 py-6 text-xs text-[rgb(var(--muted))] md:flex-row md:px-8">
           <div>
-            © {new Date().getFullYear()} Dmazalyxers · Built with{" "}
-            <a
-              href="https://api.komputerz.site/"
-              target="_blank"
-              rel="noreferrer"
-              className="font-semibold text-indigo-300 hover:text-indigo-200"
-            >
-              KomputerzAPI
-            </a>
+            © {new Date().getFullYear()} Dmazalyxers · All-in-One Downloader
           </div>
           <div className="flex items-center gap-4">
             <a
@@ -1157,6 +1138,187 @@ function App() {
           </div>
         </div>
       </footer>
+
+      {/* Password Prompt Modal */}
+      {showPasswordPrompt && (
+        <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className="modal-content glass w-full max-w-md rounded-2xl border border-[rgb(var(--border))] p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/15">
+                  <Lock className="h-5 w-5 text-indigo-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-[rgb(var(--text))]">
+                    Masukkan Password
+                  </h3>
+                  <p className="text-xs text-[rgb(var(--muted))]">
+                    Password diperlukan untuk akses pengaturan
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={closePasswordPrompt}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[rgb(var(--muted))] hover:bg-[rgb(var(--bg-2))]/60 hover:text-[rgb(var(--text))]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <input
+                type="password"
+                value={passwordInput}
+                onChange={(e) => {
+                  setPasswordInput(e.target.value);
+                  setPasswordError(false);
+                }}
+                onKeyPress={(e) => e.key === "Enter" && handlePasswordSubmit()}
+                placeholder="Masukkan password"
+                className={`w-full rounded-lg border ${
+                  passwordError
+                    ? "border-red-500/50 bg-red-500/5"
+                    : "border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40"
+                } px-4 py-3 text-sm text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))] focus:border-indigo-400/60 focus:outline-none`}
+                autoFocus
+              />
+              {passwordError && (
+                <p className="flex items-center gap-1.5 text-xs text-red-400">
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  Password salah, coba lagi
+                </p>
+              )}
+              <button
+                onClick={handlePasswordSubmit}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-600 font-semibold text-white shadow-lg shadow-black/30 transition-all hover:brightness-110 active:scale-[0.99]"
+              >
+                Buka Pengaturan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && isAuthenticated && (
+        <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4 overflow-y-auto py-8">
+          <div className="modal-content glass w-full max-w-lg rounded-2xl border border-[rgb(var(--border))] shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[rgb(var(--border))] p-6">
+              <div className="flex items-center gap-2">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600">
+                  <Settings2 className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-[rgb(var(--text))]">
+                    Pengaturan
+                  </h3>
+                  <p className="text-xs text-[rgb(var(--muted))]">
+                    Kelola API key & kontak
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={closeSettings}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[rgb(var(--muted))] hover:bg-[rgb(var(--bg-2))]/60 hover:text-[rgb(var(--text))]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* API Key Section */}
+              <div>
+                <label className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-[rgb(var(--text))]">
+                  <Key className="h-4 w-4 text-indigo-400" />
+                  API Key
+                </label>
+                <div className="flex items-center gap-2 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 px-3 py-1">
+                  <input
+                    type={showKey ? "text" : "password"}
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="KAPI-xxxxxxxxxxxxxxxxxxxxxxxx"
+                    className="min-w-0 flex-1 bg-transparent py-2.5 font-mono text-xs text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))] focus:outline-none"
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey((v) => !v)}
+                    className="flex-shrink-0 rounded-md px-2 py-1 text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]"
+                  >
+                    {showKey ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+                <p className="mt-1.5 text-xs text-[rgb(var(--muted))]">
+                  API key disimpan di browser (localStorage)
+                </p>
+              </div>
+
+              {/* Contact Section */}
+              <div className="border-t border-[rgb(var(--border))] pt-6 space-y-4">
+                <h4 className="text-sm font-semibold text-[rgb(var(--text))]">
+                  Kontak Developer
+                </h4>
+                
+                {/* WhatsApp */}
+                <a
+                  href="https://wa.me/6289603659756"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-3 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 p-3 transition-all hover:border-green-500/40 hover:bg-green-500/5"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/15">
+                    <MessageCircle className="h-5 w-5 text-green-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-[rgb(var(--text))]">
+                      WhatsApp
+                    </div>
+                    <div className="text-xs text-[rgb(var(--text-2))] truncate">
+                      +62 896-0365-9756
+                    </div>
+                  </div>
+                  <ExternalLink className="h-4 w-4 flex-shrink-0 text-[rgb(var(--muted))]" />
+                </a>
+
+                {/* Instagram */}
+                <a
+                  href="https://instagram.com/dmasmaul05"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-3 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 p-3 transition-all hover:border-pink-500/40 hover:bg-pink-500/5"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-pink-500 via-fuchsia-500 to-amber-500">
+                    <Instagram className="h-5 w-5 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-[rgb(var(--text))]">
+                      Instagram
+                    </div>
+                    <div className="text-xs text-[rgb(var(--text-2))] truncate">
+                      @dmasmaul05
+                    </div>
+                  </div>
+                  <ExternalLink className="h-4 w-4 flex-shrink-0 text-[rgb(var(--muted))]" />
+                </a>
+              </div>
+            </div>
+
+            <div className="border-t border-[rgb(var(--border))] p-4">
+              <button
+                onClick={closeSettings}
+                className="w-full rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 px-4 py-2.5 text-sm font-medium text-[rgb(var(--text-2))] transition-colors hover:border-[rgb(var(--text-2))]/40 hover:text-[rgb(var(--text))]"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
