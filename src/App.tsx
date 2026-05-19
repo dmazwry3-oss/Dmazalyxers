@@ -28,12 +28,16 @@ import {
   HardDrive,
   Scissors,
   Settings2,
-  MoreVertical,
+  Settings as SettingsIcon,
   X,
   MessageCircle,
   Lock,
 } from "lucide-react";
 import "./App.css";
+import { BottomSheet } from "./components/BottomSheet";
+import { AuthSheet } from "./components/AuthSheet";
+import { UserMenu } from "./components/UserMenu";
+import { getSession, logout, type Session } from "./lib/auth";
 
 const DEFAULT_API_KEY = "KAPI-6789ADACCC1091EFDAB55414";
 const API_BASE = "https://api.komputerz.site/api/v1/download";
@@ -427,6 +431,10 @@ function App() {
   const [passwordError, setPasswordError] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
+  // Account / login state
+  const [session, setSession] = useState<Session | null>(() => getSession());
+  const [showAuth, setShowAuth] = useState(false);
+
   const resultRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -583,6 +591,12 @@ function App() {
   };
 
   const handleSettingsClick = () => {
+    // Logged-in users skip the legacy admin password gate.
+    if (session) {
+      setIsAuthenticated(true);
+      setShowSettings(true);
+      return;
+    }
     setShowPasswordPrompt(true);
     setPasswordInput("");
     setPasswordError(false);
@@ -641,8 +655,8 @@ function App() {
           <nav className="flex items-center gap-2">
             <button
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/60 text-[rgb(var(--text-2))] transition-colors hover:border-indigo-400/40 hover:text-[rgb(var(--text))]"
-              aria-label="Toggle theme"
+              className="touch-target flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/60 text-[rgb(var(--text-2))] transition-colors hover:border-indigo-400/40 hover:text-[rgb(var(--text))]"
+              aria-label="Ganti tema"
             >
               {theme === "dark" ? (
                 <Sun className="h-4 w-4" />
@@ -652,11 +666,19 @@ function App() {
             </button>
             <button
               onClick={handleSettingsClick}
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/60 text-[rgb(var(--text-2))] transition-colors hover:border-indigo-400/40 hover:text-[rgb(var(--text))]"
-              aria-label="Settings"
+              className="touch-target flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/60 text-[rgb(var(--text-2))] transition-colors hover:border-indigo-400/40 hover:text-[rgb(var(--text))]"
+              aria-label="Pengaturan"
             >
-              <MoreVertical className="h-4 w-4" />
+              <SettingsIcon className="h-4 w-4" />
             </button>
+            <UserMenu
+              session={session}
+              onLoginClick={() => setShowAuth(true)}
+              onLogout={() => {
+                logout();
+                setSession(null);
+              }}
+            />
           </nav>
         </div>
       </header>
@@ -1137,186 +1159,206 @@ function App() {
         </div>
       </footer>
 
-      {/* Password Prompt Modal */}
-      {showPasswordPrompt && (
-        <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-          <div className="modal-content glass w-full max-w-md rounded-2xl border border-[rgb(var(--border))] p-6 shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/15">
-                  <Lock className="h-5 w-5 text-indigo-400" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-[rgb(var(--text))]">
-                    Masukkan Password
-                  </h3>
-                  <p className="text-xs text-[rgb(var(--muted))]">
-                    Password diperlukan untuk akses pengaturan
-                  </p>
-                </div>
+      {/* Password Prompt — bottom sheet on mobile, centered on desktop */}
+      <BottomSheet
+        open={showPasswordPrompt}
+        onClose={closePasswordPrompt}
+        ariaLabel="Masukkan password"
+        maxWidth="sm:max-w-md"
+      >
+        <div className="px-5 pt-2 pb-6 sm:p-6">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md shadow-indigo-500/30">
+                <Lock className="h-5 w-5 text-white" />
               </div>
-              <button
-                onClick={closePasswordPrompt}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-[rgb(var(--muted))] hover:bg-[rgb(var(--bg-2))]/60 hover:text-[rgb(var(--text))]"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="space-y-3">
-              <input
-                type="password"
-                value={passwordInput}
-                onChange={(e) => {
-                  setPasswordInput(e.target.value);
-                  setPasswordError(false);
-                }}
-                onKeyPress={(e) => e.key === "Enter" && handlePasswordSubmit()}
-                placeholder="Masukkan password"
-                className={`w-full rounded-lg border ${
-                  passwordError
-                    ? "border-red-500/50 bg-red-500/5"
-                    : "border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40"
-                } px-4 py-3 text-sm text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))] focus:border-indigo-400/60 focus:outline-none`}
-                autoFocus
-              />
-              {passwordError && (
-                <p className="flex items-center gap-1.5 text-xs text-red-400">
-                  <AlertCircle className="h-3.5 w-3.5" />
-                  Password salah, coba lagi
-                </p>
-              )}
-              <button
-                onClick={handlePasswordSubmit}
-                className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-600 font-semibold text-white shadow-lg shadow-black/30 transition-all hover:brightness-110 active:scale-[0.99]"
-              >
-                Buka Pengaturan
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Settings Modal */}
-      {showSettings && isAuthenticated && (
-        <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4 overflow-y-auto py-8">
-          <div className="modal-content glass w-full max-w-lg rounded-2xl border border-[rgb(var(--border))] shadow-2xl">
-            <div className="flex items-center justify-between border-b border-[rgb(var(--border))] p-6">
-              <div className="flex items-center gap-2">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600">
-                  <Settings2 className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-[rgb(var(--text))]">
-                    Pengaturan
-                  </h3>
-                  <p className="text-xs text-[rgb(var(--muted))]">
-                    Kelola API key & kontak
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={closeSettings}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-[rgb(var(--muted))] hover:bg-[rgb(var(--bg-2))]/60 hover:text-[rgb(var(--text))]"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-6">
-              {/* API Key Section */}
               <div>
-                <label className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-[rgb(var(--text))]">
-                  <Key className="h-4 w-4 text-indigo-400" />
-                  API Key
-                </label>
-                <div className="flex items-center gap-2 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 px-3 py-1">
-                  <input
-                    type={showKey ? "text" : "password"}
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="KAPI-xxxxxxxxxxxxxxxxxxxxxxxx"
-                    className="min-w-0 flex-1 bg-transparent py-2.5 font-mono text-xs text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))] focus:outline-none"
-                    spellCheck={false}
-                    autoComplete="off"
-                  />
+                <h3 className="text-lg font-bold text-[rgb(var(--text))]">
+                  Akses Pengaturan
+                </h3>
+                <p className="mt-0.5 text-[12px] leading-snug text-[rgb(var(--muted))]">
+                  Masukkan password admin atau{" "}
                   <button
                     type="button"
-                    onClick={() => setShowKey((v) => !v)}
-                    className="flex-shrink-0 rounded-md px-2 py-1 text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]"
+                    onClick={() => {
+                      closePasswordPrompt();
+                      setShowAuth(true);
+                    }}
+                    className="font-semibold text-indigo-400 hover:text-indigo-300"
                   >
-                    {showKey ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
+                    masuk dengan akun
                   </button>
-                </div>
-                <p className="mt-1.5 text-xs text-[rgb(var(--muted))]">
-                  API key disimpan di browser (localStorage)
                 </p>
               </div>
-
-              {/* Contact Section */}
-              <div className="border-t border-[rgb(var(--border))] pt-6 space-y-4">
-                <h4 className="text-sm font-semibold text-[rgb(var(--text))]">
-                  Kontak Developer
-                </h4>
-                
-                {/* WhatsApp */}
-                <a
-                  href="https://wa.me/6289603659756"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-3 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 p-3 transition-all hover:border-green-500/40 hover:bg-green-500/5"
-                >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/15">
-                    <MessageCircle className="h-5 w-5 text-green-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-[rgb(var(--text))]">
-                      WhatsApp
-                    </div>
-                    <div className="text-xs text-[rgb(var(--text-2))] truncate">
-                      +62 896-0365-9756
-                    </div>
-                  </div>
-                  <ExternalLink className="h-4 w-4 flex-shrink-0 text-[rgb(var(--muted))]" />
-                </a>
-
-                {/* Instagram */}
-                <a
-                  href="https://instagram.com/dmasmaul05"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-3 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 p-3 transition-all hover:border-pink-500/40 hover:bg-pink-500/5"
-                >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-pink-500 via-fuchsia-500 to-amber-500">
-                    <Instagram className="h-5 w-5 text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-[rgb(var(--text))]">
-                      Instagram
-                    </div>
-                    <div className="text-xs text-[rgb(var(--text-2))] truncate">
-                      @dmasmaul05
-                    </div>
-                  </div>
-                  <ExternalLink className="h-4 w-4 flex-shrink-0 text-[rgb(var(--muted))]" />
-                </a>
-              </div>
             </div>
+            <button
+              onClick={closePasswordPrompt}
+              className="touch-target flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl text-[rgb(var(--muted))] hover:bg-[rgb(var(--bg-2))]/60 hover:text-[rgb(var(--text))]"
+              aria-label="Tutup"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
 
-            <div className="border-t border-[rgb(var(--border))] p-4">
-              <button
-                onClick={closeSettings}
-                className="w-full rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 px-4 py-2.5 text-sm font-medium text-[rgb(var(--text-2))] transition-colors hover:border-[rgb(var(--text-2))]/40 hover:text-[rgb(var(--text))]"
-              >
-                Tutup
-              </button>
-            </div>
+          <div className="mt-5 space-y-3">
+            <input
+              type="password"
+              value={passwordInput}
+              onChange={(e) => {
+                setPasswordInput(e.target.value);
+                setPasswordError(false);
+              }}
+              onKeyDown={(e) => e.key === "Enter" && handlePasswordSubmit()}
+              placeholder="Password admin"
+              className={`w-full rounded-2xl border px-4 py-3 text-sm text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))] focus:outline-none ${
+                passwordError
+                  ? "border-red-500/50 bg-red-500/5"
+                  : "border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 focus:border-indigo-400/60"
+              }`}
+              autoFocus
+            />
+            {passwordError && (
+              <p className="flex items-center gap-1.5 text-xs text-red-400">
+                <AlertCircle className="h-3.5 w-3.5" />
+                Password salah, coba lagi
+              </p>
+            )}
+            <button
+              onClick={handlePasswordSubmit}
+              className="touch-target flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 font-semibold text-white shadow-lg shadow-indigo-500/30 transition-all hover:brightness-110 active:scale-[0.99]"
+            >
+              Buka Pengaturan
+            </button>
           </div>
         </div>
-      )}
+      </BottomSheet>
+
+      {/* Settings — bottom sheet on mobile, centered on desktop */}
+      <BottomSheet
+        open={showSettings && isAuthenticated}
+        onClose={closeSettings}
+        ariaLabel="Pengaturan"
+        maxWidth="sm:max-w-lg"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-[rgb(var(--border))] px-5 pt-2 pb-4 sm:px-6 sm:pt-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md shadow-indigo-500/30">
+              <Settings2 className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-[rgb(var(--text))]">
+                Pengaturan
+              </h3>
+              <p className="mt-0.5 text-[12px] text-[rgb(var(--muted))]">
+                Kelola API key & kontak
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={closeSettings}
+            className="touch-target flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl text-[rgb(var(--muted))] hover:bg-[rgb(var(--bg-2))]/60 hover:text-[rgb(var(--text))]"
+            aria-label="Tutup"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-6 p-5 sm:p-6">
+          {/* API Key Section */}
+          <div>
+            <label className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-[rgb(var(--text))]">
+              <Key className="h-4 w-4 text-indigo-400" />
+              API Key
+            </label>
+            <div className="flex items-center gap-2 rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 px-3 py-1 transition-colors focus-within:border-indigo-400/60">
+              <input
+                type={showKey ? "text" : "password"}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="KAPI-xxxxxxxxxxxxxxxxxxxxxxxx"
+                className="min-w-0 flex-1 bg-transparent py-2.5 font-mono text-xs text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))] focus:outline-none"
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey((v) => !v)}
+                className="touch-target flex-shrink-0 rounded-md px-2 py-1 text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]"
+                aria-label={showKey ? "Sembunyikan API key" : "Tampilkan API key"}
+              >
+                {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            <p className="mt-1.5 text-xs text-[rgb(var(--muted))]">
+              API key disimpan di browser ini (localStorage)
+            </p>
+          </div>
+
+          {/* Contact Section */}
+          <div className="space-y-3 border-t border-[rgb(var(--border))] pt-6">
+            <h4 className="text-sm font-semibold text-[rgb(var(--text))]">
+              Kontak Developer
+            </h4>
+
+            <a
+              href="https://wa.me/6289603659756"
+              target="_blank"
+              rel="noreferrer"
+              className="touch-target flex items-center gap-3 rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 p-3 transition-all hover:border-green-500/40 hover:bg-green-500/5 active:scale-[0.99]"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-500/15">
+                <MessageCircle className="h-5 w-5 text-green-400" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-[rgb(var(--text))]">
+                  WhatsApp
+                </div>
+                <div className="truncate text-xs text-[rgb(var(--text-2))]">
+                  +62 896-0365-9756
+                </div>
+              </div>
+              <ExternalLink className="h-4 w-4 flex-shrink-0 text-[rgb(var(--muted))]" />
+            </a>
+
+            <a
+              href="https://instagram.com/dmasmaul05"
+              target="_blank"
+              rel="noreferrer"
+              className="touch-target flex items-center gap-3 rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 p-3 transition-all hover:border-pink-500/40 hover:bg-pink-500/5 active:scale-[0.99]"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-pink-500 via-fuchsia-500 to-amber-500">
+                <Instagram className="h-5 w-5 text-white" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-[rgb(var(--text))]">
+                  Instagram
+                </div>
+                <div className="truncate text-xs text-[rgb(var(--text-2))]">
+                  @dmasmaul05
+                </div>
+              </div>
+              <ExternalLink className="h-4 w-4 flex-shrink-0 text-[rgb(var(--muted))]" />
+            </a>
+          </div>
+
+          <button
+            onClick={closeSettings}
+            className="touch-target w-full rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 px-4 py-2.5 text-sm font-medium text-[rgb(var(--text-2))] transition-colors hover:border-[rgb(var(--text-2))]/40 hover:text-[rgb(var(--text))]"
+          >
+            Tutup
+          </button>
+        </div>
+      </BottomSheet>
+
+      {/* Login / Register sheet */}
+      <AuthSheet
+        open={showAuth}
+        onClose={() => setShowAuth(false)}
+        onSuccess={(s) => {
+          setSession(s);
+          setShowAuth(false);
+        }}
+      />
     </div>
   );
 }
