@@ -1,0 +1,47 @@
+{
+  "name": "Dmazalyxers — All-in-One Downloader",
+  "short_name": "Dmazalyxers",
+  "description": "Download Instagram, TikTok, YouTube MP4/MP3, Spotify, TeraBox, dan CapCut dalam satu UI.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0c1a",
+  "theme_color": "#6366f1",
+  "lang": "id",
+  "categories": ["utilities", "productivity", "social"],
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Instagram",
+      "short_name": "IG",
+      "url": "./?platform=instagram",
+      "description": "Download dari Instagram"
+    },
+    {
+      "name": "TikTok",
+      "short_name": "TT",
+      "url": "./?platform=tiktok",
+      "description": "Download dari TikTok"
+    },
+    {
+      "name": "YouTube MP4",
+      "short_name": "YT",
+      "url": "./?platform=ytmp4",
+      "description": "Download video YouTube"
+    },
+    {
+      "name": "YouTube MP3",
+      "short_name": "MP3",
+      "url": "./?platform=ytmp3",
+      "description": "Download audio YouTube"
+    }
+  ]
+}

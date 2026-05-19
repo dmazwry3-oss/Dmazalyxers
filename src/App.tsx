@@ -10,6 +10,7 @@ import {
   EyeOff,
   Sun,
   Moon,
+  Monitor,
   Sparkles,
   Clipboard,
   Check,
@@ -31,6 +32,17 @@ import {
   Settings as SettingsIcon,
   X,
   MessageCircle,
+  QrCode,
+  Share2,
+  Pin,
+  PinOff,
+  Search as SearchIcon,
+  BarChart3,
+  HelpCircle,
+  FileJson,
+  ListChecks,
+  PlayCircle,
+  Filter,
 } from "lucide-react";
 import "./App.css";
 import { BottomSheet } from "./components/BottomSheet";
@@ -38,6 +50,9 @@ import { AuthSheet } from "./components/AuthSheet";
 import { ProfileSheet } from "./components/ProfileSheet";
 import { Toaster } from "./components/Toaster";
 import { UserMenu } from "./components/UserMenu";
+import { CommandPalette, type CommandItem } from "./components/CommandPalette";
+import { QRPopup } from "./components/QRPopup";
+import { HelpSheet } from "./components/HelpSheet";
 import { getSession, logout, type Session } from "./lib/auth";
 import { toast } from "./lib/toast";
 
@@ -47,6 +62,24 @@ const API_BASE = "https://api.komputerz.site/api/v1/download";
 const STORAGE_KEY = "dmaz_api_key";
 const THEME_KEY = "dmaz_theme";
 const PLATFORM_KEY = "dmaz_platform";
+const HISTORY_CAP = 50;
+
+type ThemeMode = "dark" | "light" | "system";
+
+function readThemeMode(): ThemeMode {
+  const stored = localStorage.getItem(THEME_KEY);
+  if (stored === "light" || stored === "dark" || stored === "system")
+    return stored;
+  return "dark";
+}
+
+function resolveTheme(mode: ThemeMode): "dark" | "light" {
+  if (mode !== "system") return mode;
+  if (typeof window === "undefined") return "dark";
+  return window.matchMedia("(prefers-color-scheme: light)").matches
+    ? "light"
+    : "dark";
+}
 
 // History is scoped per-user once you log in (and falls back to an "anon"
 // bucket while logged out). Keeps download history private to each account.
@@ -256,6 +289,8 @@ type HistoryItem = {
   title: string;
   thumbnail?: string;
   at: number;
+  /** When set, the entry is pinned to the top regardless of age. */
+  pinned?: boolean;
 };
 
 type ApiResponse = {
@@ -387,7 +422,7 @@ function loadHistory(session: Session | null): HistoryItem[] {
     const raw = localStorage.getItem(historyKey(session));
     if (!raw) return [];
     const parsed = JSON.parse(raw) as HistoryItem[];
-    return Array.isArray(parsed) ? parsed.slice(0, 12) : [];
+    return Array.isArray(parsed) ? parsed.slice(0, HISTORY_CAP) : [];
   } catch {
     return [];
   }
@@ -397,20 +432,122 @@ function saveHistory(session: Session | null, items: HistoryItem[]) {
   try {
     localStorage.setItem(
       historyKey(session),
-      JSON.stringify(items.slice(0, 12)),
+      JSON.stringify(items.slice(0, HISTORY_CAP)),
     );
   } catch {
     // ignore storage errors
   }
 }
 
-function App() {
-  const [theme, setTheme] = useState<"dark" | "light">(() => {
-    const stored = localStorage.getItem(THEME_KEY);
-    return stored === "light" ? "light" : "dark";
+/** Maps a hostname to the best-fit platform id, or null if unknown. */
+function detectPlatformFromUrl(raw: string): PlatformId | null {
+  try {
+    const u = new URL(raw.trim());
+    const host = u.hostname.toLowerCase();
+    if (/(^|\.)instagram\.com$/.test(host)) return "instagram";
+    if (
+      /(^|\.)tiktok\.com$/.test(host) ||
+      host === "vm.tiktok.com" ||
+      host === "vt.tiktok.com"
+    )
+      return "tiktok";
+    if (/(^|\.)(youtube\.com|youtu\.be)$/.test(host)) {
+      // Heuristic: presence of "music.youtube" → audio bias.
+      if (host.startsWith("music.")) return "ytmp3";
+      return "ytmp4";
+    }
+    if (host === "open.spotify.com" || /(^|\.)spotify\.com$/.test(host))
+      return "spotify";
+    if (
+      /(^|\.)(terabox\.com|teraboxapp\.com|nephobox\.com|4funbox\.com|mirrobox\.com|momerybox\.com|tibibox\.com|terasharelink\.com)$/.test(
+        host,
+      )
+    )
+      return "terabox";
+    if (/(^|\.)capcut\.com$/.test(host)) return "capcut";
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+const TRACKING_PARAMS = new Set([
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_term",
+  "utm_content",
+  "fbclid",
+  "gclid",
+  "igshid",
+  "igsh",
+  "si",
+  "feature",
+  "_t",
+  "_r",
+  "share_id",
+  "share_app_id",
+]);
+
+/** Strip tracking parameters from a URL while leaving the rest intact. */
+function cleanUrl(raw: string): string {
+  try {
+    const u = new URL(raw.trim());
+    const drop: string[] = [];
+    u.searchParams.forEach((_, key) => {
+      if (TRACKING_PARAMS.has(key.toLowerCase())) drop.push(key);
+    });
+    drop.forEach((k) => u.searchParams.delete(k));
+    return u.toString();
+  } catch {
+    return raw.trim();
+  }
+}
+
+/** Render a relative time string in Indonesian (e.g. "5m yang lalu"). */
+function formatRelative(ms: number): string {
+  const diff = Date.now() - ms;
+  if (diff < 0) return "baru saja";
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return "baru saja";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m lalu`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}j lalu`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}h lalu`;
+  const wk = Math.floor(day / 7);
+  if (wk < 5) return `${wk}mg lalu`;
+  const mo = Math.floor(day / 30);
+  if (mo < 12) return `${mo}b lalu`;
+  return `${Math.floor(day / 365)}t lalu`;
+}
+
+/** Sort history with pinned items first, then by timestamp desc. */
+function sortHistory(items: HistoryItem[]): HistoryItem[] {
+  return [...items].sort((a, b) => {
+    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+    return b.at - a.at;
   });
+}
+
+function App() {
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => readThemeMode());
+  // Resolved scheme — recomputed when mode changes OR the OS scheme changes
+  // (only relevant when the user picked "system").
+  const [resolvedTheme, setResolvedTheme] = useState<"dark" | "light">(() =>
+    resolveTheme(readThemeMode()),
+  );
 
   const [platformId, setPlatformId] = useState<PlatformId>(() => {
+    // Allow PWA shortcuts (?platform=xxx) to override the saved choice.
+    if (typeof window !== "undefined") {
+      const fromQuery = new URLSearchParams(window.location.search).get(
+        "platform",
+      );
+      if (fromQuery && PLATFORMS.some((p) => p.id === fromQuery))
+        return fromQuery as PlatformId;
+    }
     const stored = localStorage.getItem(PLATFORM_KEY);
     if (stored && PLATFORMS.some((p) => p.id === stored))
       return stored as PlatformId;
@@ -432,7 +569,7 @@ function App() {
   const [resultPlatform, setResultPlatform] = useState<Platform | null>(null);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>(() =>
-    loadHistory(getSession()),
+    sortHistory(loadHistory(getSession())),
   );
 
   // Settings menu state (gated by login now — no more legacy admin password)
@@ -443,14 +580,38 @@ function App() {
   const [showAuth, setShowAuth] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
 
+  // New global UI surfaces
+  const [showCommand, setShowCommand] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [qrTarget, setQrTarget] = useState<{ url: string; title?: string } | null>(
+    null,
+  );
+
+  // History UI controls
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [historyFilter, setHistoryFilter] = useState<
+    PlatformId | "all" | "pinned"
+  >("all");
+
   const resultRef = useRef<HTMLDivElement | null>(null);
+  const urlInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const root = document.documentElement;
-    if (theme === "light") root.classList.add("light");
+    if (resolvedTheme === "light") root.classList.add("light");
     else root.classList.remove("light");
-    localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
+    localStorage.setItem(THEME_KEY, themeMode);
+  }, [resolvedTheme, themeMode]);
+
+  // Recompute resolved theme whenever mode or OS preference changes.
+  useEffect(() => {
+    setResolvedTheme(resolveTheme(themeMode));
+    if (themeMode !== "system" || typeof window === "undefined") return;
+    const mq = window.matchMedia("(prefers-color-scheme: light)");
+    const onChange = () => setResolvedTheme(resolveTheme("system"));
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [themeMode]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, apiKey);
@@ -465,8 +626,36 @@ function App() {
 
   // Reload history whenever the session identity changes (login/logout/switch).
   useEffect(() => {
-    setHistory(loadHistory(session));
+    setHistory(sortHistory(loadHistory(session)));
   }, [session]);
+
+  // Global keyboard shortcuts.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isEditing =
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable);
+
+      // ⌘K / Ctrl+K — command palette
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setShowCommand(true);
+        return;
+      }
+
+      // "?" — help (only when not typing)
+      if (!isEditing && e.key === "?") {
+        e.preventDefault();
+        setShowHelp(true);
+        return;
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   const isValidUrl = useMemo(() => {
     if (!url) return false;
@@ -478,10 +667,31 @@ function App() {
     }
   }, [url, platform]);
 
+  /**
+   * Set the URL and, if the URL clearly belongs to a different platform,
+   * auto-switch the picker. Tracking parameters are stripped on the fly so
+   * the API gets a cleaner request (and history shows nicer URLs).
+   */
+  const setUrlSmart = (raw: string, opts: { autoDetect?: boolean } = {}) => {
+    const cleaned = cleanUrl(raw);
+    setUrl(cleaned);
+    if (opts.autoDetect && cleaned) {
+      const detected = detectPlatformFromUrl(cleaned);
+      if (detected && detected !== platformId) {
+        setPlatformId(detected);
+        const target = getPlatform(detected);
+        toast.info(
+          "Platform terdeteksi",
+          `Otomatis pindah ke ${target.label}.`,
+        );
+      }
+    }
+  };
+
   const handlePaste = async () => {
     try {
       const text = await navigator.clipboard.readText();
-      if (text) setUrl(text.trim());
+      if (text) setUrlSmart(text, { autoDetect: true });
     } catch {
       setError("Tidak bisa akses clipboard. Tempel manual ya.");
     }
@@ -509,13 +719,108 @@ function App() {
     }
   };
 
+  /** Cycle theme: dark → light → system → dark. */
+  const cycleTheme = () => {
+    setThemeMode((m) =>
+      m === "dark" ? "light" : m === "light" ? "system" : "dark",
+    );
+  };
+
+  /** Open every variant of the current result in a new tab. */
+  const handleDownloadAll = () => {
+    if (!result) return;
+    const total = result.variants.length;
+    if (total === 0) return;
+    result.variants.forEach((v, i) => {
+      window.setTimeout(() => {
+        // Use a hidden anchor with download to avoid popup blockers when
+        // possible; some servers ignore the attribute and stream directly,
+        // which is fine.
+        const a = document.createElement("a");
+        a.href = v.url;
+        a.target = "_blank";
+        a.rel = "noreferrer";
+        a.download = "";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }, i * 220);
+    });
+    toast.success(
+      "Membuka semua varian",
+      `${total} link dibuka di tab baru. Cek pop-up blocker kalau gak muncul.`,
+    );
+  };
+
+  /** Use Web Share API where available, fall back to clipboard. */
+  const handleShareResult = async () => {
+    if (!result) return;
+    const primary = result.variants[0];
+    const shareUrl = primary?.url ?? url;
+    const shareData = {
+      title: result.title || "Dmazalyxers",
+      text: result.title
+        ? `${result.title} — diunduh via Dmazalyxers`
+        : "Diunduh via Dmazalyxers",
+      url: shareUrl,
+    };
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        toast.success("Link disalin", "Browser kamu belum dukung Web Share.");
+      }
+    } catch {
+      // User cancelled or share failed silently — no-op.
+    }
+  };
+
+  /** Toggle pin state on a history item. */
+  const togglePin = (u: string) => {
+    const updated = sortHistory(
+      history.map((h) => (h.url === u ? { ...h, pinned: !h.pinned } : h)),
+    );
+    setHistory(updated);
+    saveHistory(session, updated);
+    const item = updated.find((h) => h.url === u);
+    if (item?.pinned) toast.success("Disematkan", item.title);
+  };
+
+  /** Export history as a JSON file the user can download. */
+  const exportHistoryJson = () => {
+    if (history.length === 0) {
+      toast.warning("Riwayat kosong", "Belum ada yang bisa diekspor.");
+      return;
+    }
+    const payload = {
+      app: "Dmazalyxers",
+      exportedAt: new Date().toISOString(),
+      user: session?.username ?? "anonymous",
+      count: history.length,
+      items: history,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = `dmazalyxers-history-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(blobUrl);
+    toast.success("Diekspor", `${history.length} item disimpan ke file JSON.`);
+  };
+
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     setError(null);
     setResult(null);
     setResultPlatform(null);
 
-    const trimmed = url.trim();
+    const trimmed = cleanUrl(url);
     if (!trimmed) {
       setError(`Tempel link ${platform.label} dulu.`);
       return;
@@ -558,16 +863,21 @@ function App() {
       setResult(parsed);
       setResultPlatform(platform);
 
+      const previous = history.find((h) => h.url === trimmed);
       const next: HistoryItem = {
         platform: platform.id,
         url: trimmed,
         title: parsed.title,
         thumbnail: parsed.thumbnail,
         at: Date.now(),
+        // Preserve pin status across re-runs.
+        pinned: previous?.pinned,
       };
-      const updated = [next, ...history.filter((h) => h.url !== trimmed)].slice(
-        0,
-        12,
+      const updated = sortHistory(
+        [next, ...history.filter((h) => h.url !== trimmed)].slice(
+          0,
+          HISTORY_CAP,
+        ),
       );
       setHistory(updated);
       saveHistory(session, updated);
@@ -593,14 +903,26 @@ function App() {
   };
 
   const clearHistory = () => {
-    setHistory([]);
-    saveHistory(session, []);
+    // Keep pinned items so users don't accidentally lose favorites.
+    const kept = history.filter((h) => h.pinned);
+    setHistory(kept);
+    saveHistory(session, kept);
+    if (history.length > kept.length) {
+      const removed = history.length - kept.length;
+      toast.success(
+        kept.length > 0 ? "Riwayat dibersihkan" : "Riwayat kosong",
+        kept.length > 0
+          ? `${removed} item dihapus, ${kept.length} disematkan tetap.`
+          : `${removed} item dihapus.`,
+      );
+    }
   };
 
   const reuseHistory = (h: HistoryItem) => {
     setPlatformId(h.platform);
     setUrl(h.url);
     window.scrollTo({ top: 0, behavior: "smooth" });
+    requestAnimationFrame(() => urlInputRef.current?.focus());
   };
 
   const handleSettingsClick = () => {
@@ -635,6 +957,204 @@ function App() {
     setShowSettings(false);
   };
 
+  // ---------- Derived UI data ----------
+
+  // Per-platform totals for the stats card.
+  const platformStats = useMemo(() => {
+    const counts = new Map<PlatformId, number>();
+    for (const h of history) counts.set(h.platform, (counts.get(h.platform) ?? 0) + 1);
+    const max = Math.max(1, ...Array.from(counts.values()));
+    return PLATFORMS.map((p) => ({
+      platform: p,
+      count: counts.get(p.id) ?? 0,
+      ratio: (counts.get(p.id) ?? 0) / max,
+    })).sort((a, b) => b.count - a.count);
+  }, [history]);
+
+  const visibleHistory = useMemo(() => {
+    const q = historyQuery.trim().toLowerCase();
+    return history.filter((h) => {
+      if (historyFilter === "pinned" && !h.pinned) return false;
+      if (
+        historyFilter !== "all" &&
+        historyFilter !== "pinned" &&
+        h.platform !== historyFilter
+      )
+        return false;
+      if (q) {
+        const hay = `${h.title} ${h.url} ${h.platform}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [history, historyQuery, historyFilter]);
+
+  const pinnedCount = useMemo(
+    () => history.filter((h) => h.pinned).length,
+    [history],
+  );
+
+  // Commands shown in the ⌘K palette.
+  const commands: CommandItem[] = useMemo(() => {
+    const platformCommands: CommandItem[] = PLATFORMS.map((p) => ({
+      id: `platform:${p.id}`,
+      group: "Platform",
+      label: `Pindah ke ${p.label}`,
+      hint: p.description,
+      icon: p.icon,
+      iconClass: `bg-gradient-to-br ${p.gradient}`,
+      iconColor: "text-white",
+      action: () => {
+        setPlatformId(p.id);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        requestAnimationFrame(() => urlInputRef.current?.focus());
+      },
+    }));
+
+    const actionCommands: CommandItem[] = [
+      {
+        id: "action:paste",
+        group: "Aksi",
+        label: "Paste link dari clipboard",
+        hint: "Auto-detect platform dari URL",
+        icon: Clipboard,
+        shortcut: "Ctrl V",
+        iconClass: "bg-indigo-500/15",
+        iconColor: "text-indigo-300",
+        action: () => handlePaste(),
+      },
+      {
+        id: "action:example",
+        group: "Aksi",
+        label: "Pakai contoh URL",
+        hint: `Untuk ${platform.label}`,
+        icon: PlayCircle,
+        iconClass: "bg-emerald-500/15",
+        iconColor: "text-emerald-300",
+        action: () => handleExample(),
+      },
+      {
+        id: "action:submit",
+        group: "Aksi",
+        label: "Submit & ambil media",
+        hint: "Sama dengan tombol Ambil",
+        icon: Sparkles,
+        shortcut: "Ctrl ↵",
+        iconClass: "bg-fuchsia-500/15",
+        iconColor: "text-fuchsia-300",
+        action: () => handleSubmit(),
+      },
+      {
+        id: "action:clear",
+        group: "Aksi",
+        label: "Bersihkan input & hasil",
+        icon: X,
+        iconClass: "bg-[rgb(var(--bg-2))]/60",
+        iconColor: "text-[rgb(var(--text-2))]",
+        action: () => handleClear(),
+      },
+    ];
+
+    const settingCommands: CommandItem[] = [
+      {
+        id: "setting:theme",
+        group: "Tampilan",
+        label: `Ganti tema (saat ini: ${themeMode})`,
+        hint: "dark → light → system",
+        icon: themeMode === "dark" ? Moon : themeMode === "light" ? Sun : Monitor,
+        iconClass: "bg-amber-500/15",
+        iconColor: "text-amber-300",
+        action: () => cycleTheme(),
+      },
+      {
+        id: "setting:settings",
+        group: "Tampilan",
+        label: "Buka pengaturan",
+        hint: session ? "Akun & API key" : "Butuh login",
+        icon: SettingsIcon,
+        iconClass: "bg-indigo-500/15",
+        iconColor: "text-indigo-300",
+        action: () => handleSettingsClick(),
+      },
+      {
+        id: "setting:help",
+        group: "Tampilan",
+        label: "Buka bantuan & shortcut",
+        icon: HelpCircle,
+        shortcut: "?",
+        iconClass: "bg-cyan-500/15",
+        iconColor: "text-cyan-300",
+        action: () => setShowHelp(true),
+      },
+    ];
+
+    const accountCommands: CommandItem[] = session
+      ? [
+          {
+            id: "account:profile",
+            group: "Akun",
+            label: "Profil saya",
+            hint: session.username,
+            icon: ExternalLink,
+            iconClass: "bg-purple-500/15",
+            iconColor: "text-purple-300",
+            action: () => setShowProfile(true),
+          },
+          {
+            id: "account:logout",
+            group: "Akun",
+            label: "Keluar",
+            icon: X,
+            iconClass: "bg-red-500/15",
+            iconColor: "text-red-300",
+            action: () => handleLogout(),
+          },
+        ]
+      : [
+          {
+            id: "account:login",
+            group: "Akun",
+            label: "Masuk / Daftar",
+            icon: ExternalLink,
+            iconClass: "bg-purple-500/15",
+            iconColor: "text-purple-300",
+            action: () => setShowAuth(true),
+          },
+        ];
+
+    const historyCommands: CommandItem[] = [
+      {
+        id: "history:export",
+        group: "Riwayat",
+        label: "Ekspor riwayat ke JSON",
+        hint: `${history.length} item`,
+        icon: FileJson,
+        iconClass: "bg-blue-500/15",
+        iconColor: "text-blue-300",
+        action: () => exportHistoryJson(),
+      },
+      {
+        id: "history:clear",
+        group: "Riwayat",
+        label: "Bersihkan riwayat",
+        hint: "Hapus semua kecuali yang disematkan",
+        icon: Trash2,
+        iconClass: "bg-red-500/15",
+        iconColor: "text-red-300",
+        action: () => clearHistory(),
+      },
+    ];
+
+    return [
+      ...actionCommands,
+      ...platformCommands,
+      ...settingCommands,
+      ...accountCommands,
+      ...historyCommands,
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [platform, themeMode, session, history.length]);
+
   return (
     <div className="relative min-h-screen overflow-hidden">
       {/* Background layers */}
@@ -663,16 +1183,46 @@ function App() {
           </a>
 
           <nav className="flex items-center gap-2">
+            {/* Command palette opener — visible affordance + keyboard shortcut */}
             <button
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="touch-target flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/60 text-[rgb(var(--text-2))] transition-colors hover:border-indigo-400/40 hover:text-[rgb(var(--text))]"
-              aria-label="Ganti tema"
+              onClick={() => setShowCommand(true)}
+              className="touch-target hidden items-center gap-2 rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/60 px-3 py-1.5 text-xs text-[rgb(var(--muted))] transition-colors hover:border-indigo-400/40 hover:text-[rgb(var(--text))] sm:flex"
+              aria-label="Command palette"
             >
-              {theme === "dark" ? (
+              <SearchIcon className="h-3.5 w-3.5" />
+              <span>Cari…</span>
+              <kbd className="rounded border border-[rgb(var(--border))] bg-[rgb(var(--bg))]/60 px-1.5 font-mono text-[10px]">
+                ⌘K
+              </kbd>
+            </button>
+            <button
+              onClick={() => setShowCommand(true)}
+              className="touch-target flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/60 text-[rgb(var(--text-2))] transition-colors hover:border-indigo-400/40 hover:text-[rgb(var(--text))] sm:hidden"
+              aria-label="Command palette"
+            >
+              <SearchIcon className="h-4 w-4" />
+            </button>
+
+            <button
+              onClick={cycleTheme}
+              className="touch-target flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/60 text-[rgb(var(--text-2))] transition-colors hover:border-indigo-400/40 hover:text-[rgb(var(--text))]"
+              aria-label={`Tema saat ini: ${themeMode}. Klik untuk ganti.`}
+              title={`Tema: ${themeMode}`}
+            >
+              {themeMode === "dark" ? (
+                <Moon className="h-4 w-4" />
+              ) : themeMode === "light" ? (
                 <Sun className="h-4 w-4" />
               ) : (
-                <Moon className="h-4 w-4" />
+                <Monitor className="h-4 w-4" />
               )}
+            </button>
+            <button
+              onClick={() => setShowHelp(true)}
+              className="touch-target flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/60 text-[rgb(var(--text-2))] transition-colors hover:border-indigo-400/40 hover:text-[rgb(var(--text))]"
+              aria-label="Bantuan"
+            >
+              <HelpCircle className="h-4 w-4" />
             </button>
             <button
               onClick={handleSettingsClick}
@@ -762,10 +1312,13 @@ function App() {
                 className={`h-4 w-4 flex-shrink-0 ${platform.accentText}`}
               />
               <input
+                ref={urlInputRef}
                 type="url"
                 placeholder={platform.placeholder}
                 value={url}
-                onChange={(e) => setUrl(e.target.value)}
+                onChange={(e) =>
+                  setUrlSmart(e.target.value, { autoDetect: true })
+                }
                 disabled={loading}
                 className="min-w-0 flex-1 bg-transparent py-2.5 text-sm text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))] focus:outline-none disabled:opacity-50"
                 autoComplete="off"
@@ -950,6 +1503,47 @@ function App() {
                   </div>
                 )}
 
+                {/* Result-level action toolbar */}
+                <div className="mb-3 flex flex-wrap items-center gap-1.5">
+                  <span className="rounded-md bg-[rgb(var(--bg-2))]/60 px-2 py-1 text-[10px] font-mono text-[rgb(var(--muted))]">
+                    {result.variants.length} varian
+                  </span>
+                  {result.variants.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={handleDownloadAll}
+                      className="touch-target flex items-center gap-1.5 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 px-2.5 py-1.5 text-[11px] font-medium text-[rgb(var(--text-2))] transition-colors hover:border-emerald-400/40 hover:text-[rgb(var(--text))]"
+                      title="Buka semua varian di tab baru"
+                    >
+                      <ListChecks className="h-3.5 w-3.5" />
+                      Download Semua
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleShareResult}
+                    className="touch-target flex items-center gap-1.5 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 px-2.5 py-1.5 text-[11px] font-medium text-[rgb(var(--text-2))] transition-colors hover:border-indigo-400/40 hover:text-[rgb(var(--text))]"
+                    title="Bagikan link"
+                  >
+                    <Share2 className="h-3.5 w-3.5" />
+                    Bagikan
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setQrTarget({
+                        url: result.variants[0]?.url ?? url,
+                        title: result.title,
+                      })
+                    }
+                    className="touch-target flex items-center gap-1.5 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 px-2.5 py-1.5 text-[11px] font-medium text-[rgb(var(--text-2))] transition-colors hover:border-fuchsia-400/40 hover:text-[rgb(var(--text))]"
+                    title="QR untuk scan di HP"
+                  >
+                    <QrCode className="h-3.5 w-3.5" />
+                    QR
+                  </button>
+                </div>
+
                 <div className="space-y-2">
                   {result.variants.map((v, i) => (
                     <div
@@ -998,6 +1592,17 @@ function App() {
                           <Clipboard className="h-4 w-4" />
                         )}
                       </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setQrTarget({ url: v.url, title: result.title })
+                        }
+                        className="hidden flex-shrink-0 rounded-md px-2 py-1.5 text-xs text-[rgb(var(--muted))] transition-colors hover:bg-[rgb(var(--bg))]/60 hover:text-[rgb(var(--text))] sm:inline-flex"
+                        aria-label="QR untuk scan di HP"
+                        title="Scan QR di HP"
+                      >
+                        <QrCode className="h-4 w-4" />
+                      </button>
                       <a
                         href={v.url}
                         target="_blank"
@@ -1015,84 +1620,242 @@ function App() {
             </div>
           )}
 
-          {/* History */}
+          {/* Stats + History */}
           {history.length > 0 && (
-            <div className="mt-10">
-              <div className="mb-3 flex items-center justify-between">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))]">
-                  <HistoryIcon className="h-3.5 w-3.5" />
-                  Riwayat ({history.length})
-                </div>
-                <button
-                  onClick={clearHistory}
-                  className="flex items-center gap-1 text-[11px] text-[rgb(var(--muted))] hover:text-red-300"
-                >
-                  <Trash2 className="h-3 w-3" />
-                  Bersihkan
-                </button>
-              </div>
-              <div className="space-y-1.5">
-                {history.map((h) => {
-                  const p = getPlatform(h.platform);
-                  const PIcon = p.icon;
-                  return (
-                    <div
-                      key={h.url + h.at}
-                      className="group flex items-center gap-3 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 p-2.5 transition-colors hover:border-[rgb(var(--text-2))]/30"
-                    >
-                      {h.thumbnail ? (
-                        <div className="relative h-10 w-14 flex-shrink-0">
-                          <img
-                            src={h.thumbnail}
-                            alt=""
-                            className="h-full w-full rounded-md object-cover"
-                            loading="lazy"
-                          />
-                          <div
-                            className={`absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br ${p.gradient} ring-2 ring-[rgb(var(--bg))]`}
-                          >
-                            <PIcon className="h-2.5 w-2.5 text-white" />
-                          </div>
-                        </div>
-                      ) : (
-                        <div
-                          className={`flex h-10 w-14 flex-shrink-0 items-center justify-center rounded-md bg-gradient-to-br ${p.gradient}`}
-                        >
-                          <PIcon className="h-4 w-4 text-white" />
-                        </div>
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className={`rounded-md px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider ${p.accentBg}`}
-                          >
-                            {p.short}
-                          </span>
-                          <div className="truncate text-sm text-[rgb(var(--text))]">
-                            {h.title}
-                          </div>
-                        </div>
-                        <div className="mt-0.5 truncate font-mono text-[10px] text-[rgb(var(--muted))]">
-                          {h.url}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => reuseHistory(h)}
-                        className="flex-shrink-0 rounded-md px-2 py-1 text-xs text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]"
-                        title="Pakai lagi"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => removeHistoryItem(h.url)}
-                        className="flex-shrink-0 rounded-md px-2 py-1 text-xs text-[rgb(var(--muted))] hover:text-red-300"
-                        title="Hapus"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+            <div className="mt-10 space-y-5">
+              {/* Stats card */}
+              <section
+                aria-label="Statistik download"
+                className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--card))]/40 p-4 sm:p-5"
+              >
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md shadow-indigo-500/30">
+                      <BarChart3 className="h-4 w-4 text-white" />
                     </div>
-                  );
-                })}
+                    <div>
+                      <div className="text-sm font-bold text-[rgb(var(--text))]">
+                        Statistik
+                      </div>
+                      <div className="text-[11px] text-[rgb(var(--muted))]">
+                        Total {history.length} download · {pinnedCount} disematkan
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={exportHistoryJson}
+                    className="touch-target flex items-center gap-1.5 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/60 px-2.5 py-1.5 text-[11px] font-medium text-[rgb(var(--text-2))] transition-colors hover:border-blue-400/40 hover:text-[rgb(var(--text))]"
+                  >
+                    <FileJson className="h-3.5 w-3.5" />
+                    Ekspor
+                  </button>
+                </div>
+                <div className="space-y-1.5">
+                  {platformStats
+                    .filter((s) => s.count > 0)
+                    .map((s) => {
+                      const PIcon = s.platform.icon;
+                      return (
+                        <button
+                          key={s.platform.id}
+                          type="button"
+                          onClick={() => setHistoryFilter(s.platform.id)}
+                          className="group flex w-full items-center gap-2.5 rounded-lg px-1 py-1.5 text-left transition-colors hover:bg-[rgb(var(--bg-2))]/40"
+                        >
+                          <span
+                            className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-gradient-to-br ${s.platform.gradient}`}
+                          >
+                            <PIcon className="h-3 w-3 text-white" />
+                          </span>
+                          <span className="w-20 flex-shrink-0 truncate text-xs font-medium text-[rgb(var(--text-2))]">
+                            {s.platform.label}
+                          </span>
+                          <span className="relative h-2 flex-1 overflow-hidden rounded-full bg-[rgb(var(--bg-2))]/60">
+                            <span
+                              className={`absolute inset-y-0 left-0 rounded-full bg-gradient-to-r ${s.platform.gradient} transition-all`}
+                              style={{ width: `${Math.max(6, s.ratio * 100)}%` }}
+                            />
+                          </span>
+                          <span className="w-8 flex-shrink-0 text-right font-mono text-[11px] tabular-nums text-[rgb(var(--text-2))]">
+                            {s.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                </div>
+              </section>
+
+              {/* History toolbar */}
+              <div>
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))]">
+                    <HistoryIcon className="h-3.5 w-3.5" />
+                    Riwayat ({visibleHistory.length}/{history.length})
+                  </div>
+                  <button
+                    onClick={clearHistory}
+                    className="flex items-center gap-1 text-[11px] text-[rgb(var(--muted))] hover:text-red-300"
+                    title={
+                      pinnedCount > 0
+                        ? "Hapus yang tidak disematkan"
+                        : "Hapus semua riwayat"
+                    }
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    Bersihkan
+                  </button>
+                </div>
+
+                {/* Search input */}
+                <div className="mb-2 flex items-center gap-2 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 px-3 py-1 transition-colors focus-within:border-indigo-400/60">
+                  <SearchIcon className="h-3.5 w-3.5 flex-shrink-0 text-[rgb(var(--muted))]" />
+                  <input
+                    type="search"
+                    value={historyQuery}
+                    onChange={(e) => setHistoryQuery(e.target.value)}
+                    placeholder="Cari di riwayat (judul / URL)…"
+                    className="min-w-0 flex-1 bg-transparent py-2 text-xs text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))] focus:outline-none"
+                    spellCheck={false}
+                  />
+                  {historyQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setHistoryQuery("")}
+                      className="flex-shrink-0 rounded-md px-1.5 py-0.5 text-[10px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]"
+                      aria-label="Bersihkan pencarian"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* Filter chips */}
+                <div className="scrollbar-thin -mx-1 mb-3 flex gap-1.5 overflow-x-auto px-1 pb-1">
+                  <FilterChip
+                    label="Semua"
+                    active={historyFilter === "all"}
+                    onClick={() => setHistoryFilter("all")}
+                    icon={Filter}
+                    count={history.length}
+                  />
+                  {pinnedCount > 0 && (
+                    <FilterChip
+                      label="Disematkan"
+                      active={historyFilter === "pinned"}
+                      onClick={() => setHistoryFilter("pinned")}
+                      icon={Pin}
+                      count={pinnedCount}
+                    />
+                  )}
+                  {platformStats
+                    .filter((s) => s.count > 0)
+                    .map((s) => (
+                      <FilterChip
+                        key={s.platform.id}
+                        label={s.platform.short}
+                        active={historyFilter === s.platform.id}
+                        onClick={() => setHistoryFilter(s.platform.id)}
+                        icon={s.platform.icon}
+                        count={s.count}
+                        accent={s.platform.gradient}
+                      />
+                    ))}
+                </div>
+
+                {/* History list */}
+                {visibleHistory.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/20 px-4 py-8 text-center text-xs text-[rgb(var(--muted))]">
+                    Tidak ada item yang cocok dengan filter / pencarian.
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {visibleHistory.map((h) => {
+                      const p = getPlatform(h.platform);
+                      const PIcon = p.icon;
+                      return (
+                        <div
+                          key={h.url + h.at}
+                          className={`group flex items-center gap-3 rounded-xl border p-2.5 transition-colors ${
+                            h.pinned
+                              ? "border-indigo-400/40 bg-indigo-500/5"
+                              : "border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 hover:border-[rgb(var(--text-2))]/30"
+                          }`}
+                        >
+                          {h.thumbnail ? (
+                            <div className="relative h-10 w-14 flex-shrink-0">
+                              <img
+                                src={h.thumbnail}
+                                alt=""
+                                className="h-full w-full rounded-md object-cover"
+                                loading="lazy"
+                              />
+                              <div
+                                className={`absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br ${p.gradient} ring-2 ring-[rgb(var(--bg))]`}
+                              >
+                                <PIcon className="h-2.5 w-2.5 text-white" />
+                              </div>
+                            </div>
+                          ) : (
+                            <div
+                              className={`flex h-10 w-14 flex-shrink-0 items-center justify-center rounded-md bg-gradient-to-br ${p.gradient}`}
+                            >
+                              <PIcon className="h-4 w-4 text-white" />
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`rounded-md px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider ${p.accentBg}`}
+                              >
+                                {p.short}
+                              </span>
+                              {h.pinned && (
+                                <Pin
+                                  className="h-3 w-3 flex-shrink-0 text-indigo-300"
+                                  aria-label="Disematkan"
+                                />
+                              )}
+                              <div className="truncate text-sm text-[rgb(var(--text))]">
+                                {h.title}
+                              </div>
+                            </div>
+                            <div className="mt-0.5 flex items-center gap-1.5 truncate font-mono text-[10px] text-[rgb(var(--muted))]">
+                              <span>{formatRelative(h.at)}</span>
+                              <span className="opacity-50">·</span>
+                              <span className="truncate">{h.url}</span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => togglePin(h.url)}
+                            className="flex-shrink-0 rounded-md px-2 py-1 text-xs text-[rgb(var(--muted))] hover:text-indigo-300"
+                            title={h.pinned ? "Lepas pin" : "Sematkan"}
+                          >
+                            {h.pinned ? (
+                              <PinOff className="h-3.5 w-3.5" />
+                            ) : (
+                              <Pin className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => reuseHistory(h)}
+                            className="flex-shrink-0 rounded-md px-2 py-1 text-xs text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]"
+                            title="Pakai lagi"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => removeHistoryItem(h.url)}
+                            className="flex-shrink-0 rounded-md px-2 py-1 text-xs text-[rgb(var(--muted))] hover:text-red-300"
+                            title="Hapus"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1334,7 +2097,73 @@ function App() {
 
       {/* Global toast notifications */}
       <Toaster />
+
+      {/* ⌘K command palette */}
+      <CommandPalette
+        open={showCommand}
+        onClose={() => setShowCommand(false)}
+        commands={commands}
+      />
+
+      {/* Help / FAQ / shortcuts sheet */}
+      <HelpSheet
+        open={showHelp}
+        onClose={() => setShowHelp(false)}
+        onOpenCommandPalette={() => setShowCommand(true)}
+      />
+
+      {/* QR popup for any download URL */}
+      <QRPopup
+        open={!!qrTarget}
+        url={qrTarget?.url ?? null}
+        title={qrTarget?.title}
+        onClose={() => setQrTarget(null)}
+      />
     </div>
+  );
+}
+
+/**
+ * Compact pill button for filtering history by platform / pinned state.
+ */
+function FilterChip({
+  label,
+  active,
+  onClick,
+  icon: Icon,
+  count,
+  accent,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  icon: LucideIcon;
+  count: number;
+  accent?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex flex-shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-all ${
+        active
+          ? accent
+            ? `border-transparent bg-gradient-to-r ${accent} text-white shadow-md shadow-black/20`
+            : "border-indigo-400/40 bg-indigo-500/15 text-indigo-200"
+          : "border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 text-[rgb(var(--text-2))] hover:border-[rgb(var(--text-2))]/30"
+      }`}
+      aria-pressed={active}
+    >
+      <Icon className="h-3 w-3" />
+      {label}
+      <span
+        className={`ml-0.5 rounded px-1 font-mono text-[9px] tabular-nums ${
+          active ? "bg-white/20" : "bg-[rgb(var(--bg))]/60"
+        }`}
+      >
+        {count}
+      </span>
+    </button>
   );
 }
 
