@@ -6,6 +6,10 @@
   text-align: left;
 }
 
+/* ============================================================
+   Keyframes
+   ============================================================ */
+
 @keyframes gradient-shift {
   0%,
   100% {
@@ -61,8 +65,56 @@
   }
 }
 
+@keyframes sheet-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sheet-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes menu-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ============================================================
+   Animation utilities
+   ============================================================ */
+
 .animate-fade-up {
-  animation: fade-up 0.5s ease both;
+  animation: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .bg-shimmer {
@@ -85,12 +137,17 @@
   animation: gradient-shift 6s ease infinite;
 }
 
+/* ============================================================
+   Background ornaments
+   ============================================================ */
+
 .orb {
   position: absolute;
   border-radius: 9999px;
   filter: blur(80px);
   pointer-events: none;
   z-index: 0;
+  will-change: transform;
 }
 .orb-1 {
   width: 520px;
@@ -137,9 +194,9 @@
 }
 
 .glass {
-  background: rgba(15, 18, 32, 0.6);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: rgba(15, 18, 32, 0.62);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
 }
 
 .light .glass {
@@ -155,6 +212,10 @@
   animation: pulse-ring 2s ease-out infinite;
 }
 
+/* ============================================================
+   Scrollbars
+   ============================================================ */
+
 .scrollbar-thin::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -167,33 +228,70 @@
   background: transparent;
 }
 
-/* Mobile improvements */
+/* ============================================================
+   Touch / mobile-first ergonomics
+   ============================================================ */
+
+/* Ensures any interactive element meets the 44px minimum hit area
+   recommended by WCAG and the iOS HIG, without changing visual size. */
+.touch-target {
+  position: relative;
+}
+.touch-target::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* Disable iOS tap highlight everywhere; we handle our own active states. */
+button,
+a,
+[role="button"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Prevent iOS Safari from auto-zooming when a text input is focused.
+   16px minimum font-size on form controls is the documented fix. */
+@supports (-webkit-touch-callout: none) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+/* ============================================================
+   Mobile orb tuning
+   ============================================================ */
+
 @media (max-width: 640px) {
   .orb {
     filter: blur(60px);
   }
-  
   .orb-1 {
     width: 380px;
     height: 380px;
     top: -100px;
     right: -80px;
   }
-  
   .orb-2 {
     width: 280px;
     height: 280px;
     bottom: -60px;
     left: -70px;
   }
-  
   .orb-3 {
     width: 220px;
     height: 220px;
   }
 }
 
-/* Smooth modal animations */
+/* ============================================================
+   Modals & bottom sheets
+   ============================================================ */
+
 @keyframes modal-fade-in {
   from {
     opacity: 0;
@@ -203,21 +301,64 @@
   }
 }
 
-@keyframes modal-scale-in {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
 .modal-backdrop {
   animation: modal-fade-in 0.2s ease;
 }
 
 .modal-content {
-  animation: modal-scale-in 0.25s ease;
+  animation: sheet-scale-in 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Bottom sheet: slides up on phones, scales in on tablets+. */
+.bottom-sheet-backdrop {
+  animation: modal-fade-in 0.2s ease;
+}
+
+.bottom-sheet-panel {
+  animation: sheet-slide-up 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (min-width: 640px) {
+  .bottom-sheet-panel {
+    animation: sheet-scale-in 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+
+/* User menu popover */
+.user-menu-pop {
+  animation: menu-pop 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: top right;
+}
+
+/* Toast / floating banner animation */
+.toast-in {
+  animation: toast-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ============================================================
+   Safe-area handling for iOS notches / home indicator
+   ============================================================ */
+
+.safe-top {
+  padding-top: max(env(safe-area-inset-top, 0px), 0px);
+}
+.safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 0px);
+}
+
+/* ============================================================
+   Reduced motion
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .orb {
+    animation: none;
+  }
 }

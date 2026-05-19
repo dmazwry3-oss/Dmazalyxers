@@ -33,6 +33,12 @@
     border-color: rgb(var(--border));
   }
 
+  html {
+    /* Stops mobile Safari resizing text on rotate. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
   html,
   body,
   #root {
@@ -40,11 +46,28 @@
     color: rgb(var(--text));
     font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
     min-height: 100vh;
+    /* Use the dynamic viewport height where supported so the app fills the
+       screen correctly on mobile when address bars expand/collapse. */
+    min-height: 100dvh;
   }
 
   body {
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    /* Avoid horizontal scrolling caused by stray overflowing decorations. */
+    overflow-x: hidden;
+  }
+
+  /* Better default focus ring that respects keyboard navigation. */
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  /* Selection */
+  ::selection {
+    background: rgba(99, 102, 241, 0.35);
+    color: rgb(var(--text));
   }
 }
-
