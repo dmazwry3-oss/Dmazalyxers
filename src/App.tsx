@@ -46,6 +46,10 @@ import {
   ListChecks,
   PlayCircle,
   Filter,
+  ArrowUp,
+  MousePointerClick,
+  Play,
+  Lightbulb,
 } from "lucide-react";
 import "./App.css";
 import { BottomSheet } from "./components/BottomSheet";
@@ -666,6 +670,16 @@ function App() {
     PlatformId | "all" | "pinned"
   >("all");
 
+  // Inline preview for a specific result variant (toggled via "Pratinjau"
+  // button on each variant row). null = no preview open.
+  const [previewIdx, setPreviewIdx] = useState<number | null>(null);
+
+  // Drag-and-drop a URL anywhere on the window to populate the input.
+  const [isDraggingOverWindow, setIsDraggingOverWindow] = useState(false);
+
+  // Floating "scroll to top" button visibility.
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
   const resultRef = useRef<HTMLDivElement | null>(null);
   const urlInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -729,6 +743,106 @@ function App() {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
+
+  // Arrow keys navigate the platform picker when the user isn't editing.
+  // Wraps around at both ends so it feels like a proper carousel.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isEditing =
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable);
+      if (isEditing) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const idx = PLATFORMS.findIndex((p) => p.id === platformId);
+      if (idx < 0) return;
+      e.preventDefault();
+      const len = PLATFORMS.length;
+      const next =
+        e.key === "ArrowRight" ? (idx + 1) % len : (idx - 1 + len) % len;
+      setPlatformId(PLATFORMS[next].id);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [platformId]);
+
+  // Drag-and-drop a link from anywhere (browser tab, text editor, etc.)
+  // onto the window to auto-paste it into the URL input. Uses a counter
+  // because dragenter/dragleave fire on every child element traversal.
+  useEffect(() => {
+    let counter = 0;
+    const isUrlDrag = (dt: DataTransfer | null): boolean => {
+      if (!dt || !dt.types) return false;
+      const types = Array.from(dt.types);
+      return types.some(
+        (t) => t === "text/uri-list" || t === "text/plain" || t === "text/html",
+      );
+    };
+    const onDragEnter = (e: DragEvent) => {
+      if (!isUrlDrag(e.dataTransfer)) return;
+      counter++;
+      setIsDraggingOverWindow(true);
+      e.preventDefault();
+    };
+    const onDragLeave = (e: DragEvent) => {
+      if (!isUrlDrag(e.dataTransfer)) return;
+      counter = Math.max(0, counter - 1);
+      if (counter === 0) setIsDraggingOverWindow(false);
+    };
+    const onDragOver = (e: DragEvent) => {
+      if (!isUrlDrag(e.dataTransfer)) return;
+      e.preventDefault();
+    };
+    const onDrop = (e: DragEvent) => {
+      if (!isUrlDrag(e.dataTransfer)) return;
+      e.preventDefault();
+      counter = 0;
+      setIsDraggingOverWindow(false);
+      const data =
+        e.dataTransfer?.getData("text/uri-list") ||
+        e.dataTransfer?.getData("text/plain") ||
+        "";
+      const match = data.match(/https?:\/\/[^\s]+/);
+      const candidate = match?.[0] ?? data.trim();
+      try {
+        // Throws when not a valid absolute URL.
+        new URL(candidate);
+        setUrlSmart(candidate, { autoDetect: true });
+        toast.success("Link diterima", "URL otomatis ditempel dari drop.");
+      } catch {
+        toast.warning("Bukan URL", "Yang di-drop bukan URL yang valid.");
+      }
+    };
+    window.addEventListener("dragenter", onDragEnter);
+    window.addEventListener("dragleave", onDragLeave);
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragenter", onDragEnter);
+      window.removeEventListener("dragleave", onDragLeave);
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("drop", onDrop);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Show the floating scroll-to-top button after the user has scrolled
+  // past the form (~ one viewport), hide it back at the top.
+  useEffect(() => {
+    const onScroll = () => setShowScrollTop(window.scrollY > 480);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Collapse the inline preview whenever a fresh result arrives so the
+  // user starts in a clean state.
+  useEffect(() => {
+    setPreviewIdx(null);
+  }, [result]);
 
   const isValidUrl = useMemo(() => {
     if (!url) return false;
@@ -1028,6 +1142,20 @@ function App() {
     setSession(null);
     setShowProfile(false);
     setShowSettings(false);
+  };
+
+  /** Smooth-scroll back to the top of the page. */
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  /**
+   * Toggle inline preview for a single variant. Clicking the same one
+   * again collapses it; switching to a different variant moves the
+   * preview without opening a second copy.
+   */
+  const togglePreview = (idx: number) => {
+    setPreviewIdx((current) => (current === idx ? null : idx));
   };
 
   // ---------- Derived UI data ----------
@@ -1620,73 +1748,151 @@ function App() {
 
                 <div className="space-y-2">
                   {result.variants.map((v, i) => (
-                    <div
-                      key={v.url}
-                      className={`group flex items-center gap-2 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 p-2.5 transition-colors ${resultPlatform.accentBorder}`}
-                    >
+                    <div key={v.url}>
                       <div
-                        className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${
-                          v.kind === "audio"
-                            ? "bg-amber-500/15 text-amber-300"
-                            : v.kind === "image"
-                              ? "bg-fuchsia-500/15 text-fuchsia-300"
-                              : v.quality?.toUpperCase().includes("HD") ||
-                                  v.quality?.includes("1080") ||
-                                  v.quality?.includes("720")
-                                ? "bg-emerald-500/15 text-emerald-300"
-                                : resultPlatform.accentBg
+                        className={`group flex items-center gap-2 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 p-2.5 transition-colors ${resultPlatform.accentBorder} ${
+                          previewIdx === i
+                            ? "rounded-b-none border-b-transparent"
+                            : ""
                         }`}
-                        aria-hidden
                       >
-                        {v.kind === "image" ? (
-                          <ImageIcon className="h-4 w-4" />
-                        ) : v.kind === "audio" ? (
-                          <Music className="h-4 w-4" />
-                        ) : (
-                          <Video className="h-4 w-4" />
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium text-[rgb(var(--text))]">
-                          {v.label}
+                        <div
+                          className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${
+                            v.kind === "audio"
+                              ? "bg-amber-500/15 text-amber-300"
+                              : v.kind === "image"
+                                ? "bg-fuchsia-500/15 text-fuchsia-300"
+                                : v.quality?.toUpperCase().includes("HD") ||
+                                    v.quality?.includes("1080") ||
+                                    v.quality?.includes("720")
+                                  ? "bg-emerald-500/15 text-emerald-300"
+                                  : resultPlatform.accentBg
+                          }`}
+                          aria-hidden
+                        >
+                          {v.kind === "image" ? (
+                            <ImageIcon className="h-4 w-4" />
+                          ) : v.kind === "audio" ? (
+                            <Music className="h-4 w-4" />
+                          ) : (
+                            <Video className="h-4 w-4" />
+                          )}
                         </div>
-                        <div className="truncate font-mono text-[10px] text-[rgb(var(--muted))]">
-                          {v.url}
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium text-[rgb(var(--text))]">
+                            {v.label}
+                          </div>
+                          <div className="truncate font-mono text-[10px] text-[rgb(var(--muted))]">
+                            {v.url}
+                          </div>
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => togglePreview(i)}
+                          className={`hidden flex-shrink-0 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-[rgb(var(--bg))]/60 sm:inline-flex ${
+                            previewIdx === i
+                              ? "text-emerald-300"
+                              : "text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]"
+                          }`}
+                          aria-label={
+                            previewIdx === i ? "Tutup pratinjau" : "Pratinjau"
+                          }
+                          title={
+                            previewIdx === i ? "Tutup pratinjau" : "Pratinjau"
+                          }
+                          aria-expanded={previewIdx === i}
+                        >
+                          {previewIdx === i ? (
+                            <X className="h-4 w-4" />
+                          ) : (
+                            <Play className="h-4 w-4" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(v.url, i)}
+                          className="flex-shrink-0 rounded-md px-2 py-1.5 text-xs text-[rgb(var(--muted))] transition-colors hover:bg-[rgb(var(--bg))]/60 hover:text-[rgb(var(--text))]"
+                          aria-label="Copy link"
+                        >
+                          {copiedIdx === i ? (
+                            <Check className="h-4 w-4 text-emerald-400" />
+                          ) : (
+                            <Clipboard className="h-4 w-4" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setQrTarget({ url: v.url, title: result.title })
+                          }
+                          className="hidden flex-shrink-0 rounded-md px-2 py-1.5 text-xs text-[rgb(var(--muted))] transition-colors hover:bg-[rgb(var(--bg))]/60 hover:text-[rgb(var(--text))] sm:inline-flex"
+                          aria-label="QR untuk scan di HP"
+                          title="Scan QR di HP"
+                        >
+                          <QrCode className="h-4 w-4" />
+                        </button>
+                        <a
+                          href={v.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          download
+                          className={`flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-r ${resultPlatform.gradient} px-3 py-2 text-xs font-semibold text-white shadow-md shadow-black/30 transition-all hover:brightness-110 active:scale-95`}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          Download
+                        </a>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(v.url, i)}
-                        className="flex-shrink-0 rounded-md px-2 py-1.5 text-xs text-[rgb(var(--muted))] transition-colors hover:bg-[rgb(var(--bg))]/60 hover:text-[rgb(var(--text))]"
-                        aria-label="Copy link"
-                      >
-                        {copiedIdx === i ? (
-                          <Check className="h-4 w-4 text-emerald-400" />
-                        ) : (
-                          <Clipboard className="h-4 w-4" />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setQrTarget({ url: v.url, title: result.title })
-                        }
-                        className="hidden flex-shrink-0 rounded-md px-2 py-1.5 text-xs text-[rgb(var(--muted))] transition-colors hover:bg-[rgb(var(--bg))]/60 hover:text-[rgb(var(--text))] sm:inline-flex"
-                        aria-label="QR untuk scan di HP"
-                        title="Scan QR di HP"
-                      >
-                        <QrCode className="h-4 w-4" />
-                      </button>
-                      <a
-                        href={v.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        download
-                        className={`flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-r ${resultPlatform.gradient} px-3 py-2 text-xs font-semibold text-white shadow-md shadow-black/30 transition-all hover:brightness-110 active:scale-95`}
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                        Download
-                      </a>
+                      {previewIdx === i && (
+                        <div className="animate-fade-up overflow-hidden rounded-b-xl border border-t-0 border-[rgb(var(--border))] bg-black/20 p-3">
+                          {v.kind === "video" ? (
+                            <video
+                              src={v.url}
+                              controls
+                              preload="metadata"
+                              playsInline
+                              className="mx-auto block max-h-[460px] w-full rounded-lg bg-black"
+                              onError={() =>
+                                toast.warning(
+                                  "Tidak bisa preview",
+                                  "Server media kemungkinan blokir embed. Coba klik Download.",
+                                )
+                              }
+                            >
+                              Browser kamu tidak mendukung preview video.
+                            </video>
+                          ) : v.kind === "audio" ? (
+                            <audio
+                              src={v.url}
+                              controls
+                              preload="metadata"
+                              className="w-full"
+                              onError={() =>
+                                toast.warning(
+                                  "Tidak bisa preview",
+                                  "Server media kemungkinan blokir embed. Coba klik Download.",
+                                )
+                              }
+                            >
+                              Browser kamu tidak mendukung preview audio.
+                            </audio>
+                          ) : (
+                            <img
+                              src={v.url}
+                              alt={result.title}
+                              className="mx-auto block max-h-[460px] w-auto rounded-lg"
+                              loading="lazy"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).style.display =
+                                  "none";
+                                toast.warning(
+                                  "Tidak bisa preview",
+                                  "Gambar gagal dimuat. Coba klik Download.",
+                                );
+                              }}
+                            />
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1933,6 +2139,125 @@ function App() {
               </div>
             </div>
           )}
+
+          {/* Onboarding / empty state — shown only on a clean slate so first-time
+              visitors get suggestions without crowding regular users. */}
+          {!loading &&
+            !error &&
+            !result &&
+            history.length === 0 &&
+            (() => {
+              const popularIds: PlatformId[] = [
+                "instagram",
+                "tiktok",
+                "ytmp4",
+              ];
+              const popular = popularIds
+                .map((id) => PLATFORMS.find((p) => p.id === id))
+                .filter((p): p is Platform => Boolean(p));
+              const tips: {
+                icon: LucideIcon;
+                title: string;
+                desc: string;
+                accent: string;
+              }[] = [
+                {
+                  icon: MousePointerClick,
+                  title: "Drag & drop link",
+                  desc: "Tarik link dari tab lain ke jendela ini — otomatis nempel & deteksi platform.",
+                  accent: "text-cyan-300 bg-cyan-500/15",
+                },
+                {
+                  icon: SearchIcon,
+                  title: "Cari aksi cepat",
+                  desc: "Tekan ⌘K (atau Ctrl+K) untuk buka command palette dan loncat ke platform mana pun.",
+                  accent: "text-indigo-300 bg-indigo-500/15",
+                },
+                {
+                  icon: Lightbulb,
+                  title: "Pakai panah kiri/kanan",
+                  desc: "Saat tidak mengetik, tekan ← / → untuk geser pilihan platform tanpa mouse.",
+                  accent: "text-amber-300 bg-amber-500/15",
+                },
+              ];
+              return (
+                <div
+                  className="animate-fade-up mt-8 rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--card))]/40 p-5 sm:p-6"
+                  style={{ animationDelay: "0.12s" }}
+                >
+                  <div className="mb-4 flex items-center gap-2">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md shadow-indigo-500/30">
+                      <Sparkles className="h-4 w-4 text-white" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold text-[rgb(var(--text))]">
+                        Mulai dari sini
+                      </div>
+                      <div className="text-[11px] text-[rgb(var(--muted))]">
+                        Pilih platform populer atau pelajari shortcut-nya
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    {popular.map((p) => {
+                      const Icon = p.icon;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => {
+                            setPlatformId(p.id);
+                            requestAnimationFrame(() =>
+                              urlInputRef.current?.focus(),
+                            );
+                          }}
+                          className="touch-target group flex items-center gap-3 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 p-3 text-left transition-all hover:border-[rgb(var(--text-2))]/40 hover:bg-[rgb(var(--bg-2))]/60 active:scale-[0.99]"
+                        >
+                          <span
+                            className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${p.gradient} shadow-md shadow-black/30`}
+                          >
+                            <Icon className="h-4 w-4 text-white" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-[rgb(var(--text))]">
+                              {p.label}
+                            </span>
+                            <span className="block truncate text-[11px] text-[rgb(var(--muted))]">
+                              {p.description}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    {tips.map((t) => {
+                      const TIcon = t.icon;
+                      return (
+                        <div
+                          key={t.title}
+                          className="rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/30 p-3"
+                        >
+                          <div
+                            className={`mb-2 flex h-8 w-8 items-center justify-center rounded-lg ${t.accent}`}
+                          >
+                            <TIcon className="h-4 w-4" />
+                          </div>
+                          <div className="text-xs font-semibold text-[rgb(var(--text))]">
+                            {t.title}
+                          </div>
+                          <div className="mt-0.5 text-[11px] leading-relaxed text-[rgb(var(--text-2))]">
+                            {t.desc}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
         </section>
 
         {/* Features */}
@@ -2193,6 +2518,47 @@ function App() {
         title={qrTarget?.title}
         onClose={() => setQrTarget(null)}
       />
+
+      {/* Floating "scroll to top" button — appears once the user has
+          scrolled past the form. */}
+      <button
+        type="button"
+        onClick={scrollToTop}
+        aria-label="Scroll ke atas"
+        title="Scroll ke atas"
+        className={`touch-target fixed bottom-5 right-5 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/90 text-[rgb(var(--text))] shadow-lg shadow-black/40 backdrop-blur transition-all hover:border-indigo-400/40 hover:text-indigo-300 active:scale-95 ${
+          showScrollTop
+            ? "translate-y-0 opacity-100"
+            : "pointer-events-none translate-y-3 opacity-0"
+        }`}
+      >
+        <ArrowUp className="h-4 w-4" />
+      </button>
+
+      {/* Full-screen overlay shown while a URL is being dragged onto the
+          window. Acts as a giant drop target; the actual drop handler is
+          attached to window in a useEffect. */}
+      {isDraggingOverWindow && (
+        <div
+          aria-hidden
+          className="animate-fade-up pointer-events-none fixed inset-0 z-40 flex items-center justify-center p-6"
+        >
+          <div className="absolute inset-0 bg-indigo-950/70 backdrop-blur-sm" />
+          <div className="relative flex flex-col items-center gap-3 rounded-3xl border-2 border-dashed border-indigo-300/60 bg-[rgb(var(--bg))]/90 px-8 py-10 text-center shadow-2xl shadow-indigo-950/40">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/30">
+              <MousePointerClick className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <div className="text-base font-bold text-[rgb(var(--text))]">
+                Lepaskan untuk paste link
+              </div>
+              <div className="mt-1 text-xs text-[rgb(var(--text-2))]">
+                Platform akan dideteksi otomatis dari URL.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
