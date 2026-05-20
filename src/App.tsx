@@ -28,6 +28,9 @@ import {
   Youtube,
   HardDrive,
   Scissors,
+  Heart,
+  Flame,
+  Cloud,
   Settings2,
   Settings as SettingsIcon,
   X,
@@ -94,7 +97,10 @@ type PlatformId =
   | "ytmp3"
   | "spotify"
   | "terabox"
-  | "capcut";
+  | "capcut"
+  | "likee"
+  | "gdrive"
+  | "mediafire";
 
 type QualityOption = { label: string; value: string };
 
@@ -258,6 +264,62 @@ const PLATFORMS: Platform[] = [
     validate: (u) => /(^|\.)capcut\.com$/.test(u.hostname),
     validHint: "Format: capcut.com/...",
   },
+  {
+    id: "likee",
+    label: "Likee",
+    short: "LK",
+    endpoint: "likee",
+    placeholder: "https://likee.video/v/...",
+    description: "Video Likee tanpa watermark",
+    example: "https://likee.video/v/wQF9fK",
+    icon: Heart,
+    gradient: "from-amber-400 via-pink-500 to-rose-500",
+    accentText: "text-rose-400",
+    accentBorder: "focus-within:border-rose-400/60 hover:border-rose-400/40",
+    accentBg: "bg-rose-500/15 text-rose-300",
+    validate: (u) =>
+      /(^|\.)(likee\.com|likee\.video)$/.test(u.hostname) ||
+      u.hostname === "l.likee.video" ||
+      u.hostname === "m.likee.com",
+    validHint: "Format: likee.video/v/... atau likee.com/...",
+  },
+  {
+    id: "gdrive",
+    label: "Google Drive",
+    short: "GD",
+    endpoint: "gdrive",
+    placeholder: "https://drive.google.com/file/d/...",
+    description: "File publik dari Google Drive",
+    example:
+      "https://drive.google.com/file/d/1A2B3C4D5E6F7G8H9I0J/view?usp=sharing",
+    icon: Cloud,
+    gradient: "from-yellow-400 via-emerald-400 to-blue-500",
+    accentText: "text-emerald-400",
+    accentBorder:
+      "focus-within:border-emerald-400/60 hover:border-emerald-400/40",
+    accentBg: "bg-emerald-500/15 text-emerald-300",
+    validate: (u) =>
+      u.hostname === "drive.google.com" || u.hostname === "docs.google.com",
+    validHint:
+      "Format: drive.google.com/file/d/... (pastikan link publik / share-anyone)",
+  },
+  {
+    id: "mediafire",
+    label: "MediaFire",
+    short: "MF",
+    endpoint: "mediafire",
+    placeholder: "https://www.mediafire.com/file/...",
+    description: "Download file langsung dari MediaFire",
+    example: "https://www.mediafire.com/file/abcd1234efgh5678/example.zip/file",
+    icon: Flame,
+    gradient: "from-orange-500 to-red-600",
+    accentText: "text-orange-400",
+    accentBorder:
+      "focus-within:border-orange-400/60 hover:border-orange-400/40",
+    accentBg: "bg-orange-500/15 text-orange-300",
+    validate: (u) => /(^|\.)mediafire\.com$/.test(u.hostname),
+    validHint: "Format: mediafire.com/file/... atau mediafire.com/?...",
+  },
 ];
 
 function getPlatform(id: string): Platform {
@@ -329,6 +391,8 @@ function parseResult(data: ApiResponse): ParsedResult {
     get("caption") ||
     get("description") ||
     get("name") ||
+    get("filename") ||
+    get("file_name") ||
     "Media";
   const thumbnail =
     get("thumbnail") ||
@@ -465,6 +529,15 @@ function detectPlatformFromUrl(raw: string): PlatformId | null {
     )
       return "terabox";
     if (/(^|\.)capcut\.com$/.test(host)) return "capcut";
+    if (
+      /(^|\.)(likee\.com|likee\.video)$/.test(host) ||
+      host === "l.likee.video" ||
+      host === "m.likee.com"
+    )
+      return "likee";
+    if (host === "drive.google.com" || host === "docs.google.com")
+      return "gdrive";
+    if (/(^|\.)mediafire\.com$/.test(host)) return "mediafire";
     return null;
   } catch {
     return null;
@@ -1247,12 +1320,13 @@ function App() {
           <div className="animate-fade-up text-center">
             <h1 className="text-3xl font-black leading-tight tracking-tight sm:text-4xl md:text-5xl">
               Download dari{" "}
-              <span className="gradient-text">7 Platform</span>
+              <span className="gradient-text">10 Platform</span>
               <br className="hidden sm:block" /> dalam Satu Tempat
             </h1>
             <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-[rgb(var(--text-2))] sm:text-base">
-              Instagram, TikTok, YouTube (MP4 & MP3), Spotify, TeraBox, dan
-              CapCut. Pilih platform, tempel link, ambil hasilnya.
+              Instagram, TikTok, YouTube (MP4 & MP3), Spotify, TeraBox, CapCut,
+              Likee, Google Drive, dan MediaFire. Pilih platform, tempel link,
+              ambil hasilnya.
             </p>
           </div>
 
@@ -1261,7 +1335,7 @@ function App() {
             className="animate-fade-up scrollbar-thin mt-8 -mx-1 overflow-x-auto px-1 pb-1"
             style={{ animationDelay: "0.05s" }}
           >
-            <div className="flex w-max gap-2 sm:w-full sm:grid sm:grid-cols-4 lg:grid-cols-7">
+            <div className="flex w-max gap-2 sm:w-full sm:grid sm:grid-cols-5 lg:grid-cols-5">
               {PLATFORMS.map((p) => {
                 const selected = p.id === platform.id;
                 const Icon = p.icon;
@@ -1401,7 +1475,7 @@ function App() {
               ) : (
                 <>
                   <Sparkles className="h-4 w-4" />
-                  Ambil {platform.id === "ytmp3" || platform.id === "spotify" ? "Audio" : platform.id === "terabox" ? "File" : "Media"}
+                  Ambil {platform.id === "ytmp3" || platform.id === "spotify" ? "Audio" : platform.id === "terabox" || platform.id === "gdrive" || platform.id === "mediafire" ? "File" : "Media"}
                 </>
               )}
             </button>
@@ -1867,8 +1941,8 @@ function App() {
             {[
               {
                 icon: Zap,
-                title: "7 Platform",
-                desc: "Instagram, TikTok, YouTube MP4/MP3, Spotify, TeraBox, dan CapCut — semuanya dalam satu UI.",
+                title: "10 Platform",
+                desc: "Instagram, TikTok, YouTube MP4/MP3, Spotify, TeraBox, CapCut, Likee, Google Drive, & MediaFire — semuanya dalam satu UI.",
                 color: "text-amber-400",
                 bg: "bg-amber-500/10",
               },

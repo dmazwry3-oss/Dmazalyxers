@@ -1,7 +1,7 @@
 {
   "name": "Dmazalyxers — All-in-One Downloader",
   "short_name": "Dmazalyxers",
-  "description": "Download Instagram, TikTok, YouTube MP4/MP3, Spotify, TeraBox, dan CapCut dalam satu UI.",
+  "description": "Download Instagram, TikTok, YouTube MP4/MP3, Spotify, TeraBox, CapCut, Likee, Google Drive, dan MediaFire dalam satu UI.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -42,6 +42,24 @@
       "short_name": "MP3",
       "url": "./?platform=ytmp3",
       "description": "Download audio YouTube"
+    },
+    {
+      "name": "Likee",
+      "short_name": "LK",
+      "url": "./?platform=likee",
+      "description": "Download video Likee"
+    },
+    {
+      "name": "Google Drive",
+      "short_name": "GD",
+      "url": "./?platform=gdrive",
+      "description": "Download file dari Google Drive"
+    },
+    {
+      "name": "MediaFire",
+      "short_name": "MF",
+      "url": "./?platform=mediafire",
+      "description": "Download file dari MediaFire"
     }
   ]
 }
