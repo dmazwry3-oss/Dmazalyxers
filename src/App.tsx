@@ -56,8 +56,14 @@ import { UserMenu } from "./components/UserMenu";
 import { CommandPalette, type CommandItem } from "./components/CommandPalette";
 import { QRPopup } from "./components/QRPopup";
 import { HelpSheet } from "./components/HelpSheet";
+import { MobileTabBar } from "./components/MobileTabBar";
+import { PasteBanner } from "./components/PasteBanner";
+import { InstallPrompt } from "./components/InstallPrompt";
+import { ScrollToTop } from "./components/ScrollToTop";
 import { getSession, logout, type Session } from "./lib/auth";
 import { toast } from "./lib/toast";
+import { haptic } from "./lib/haptics";
+import { isLikelyUrl, readClipboardText } from "./lib/clipboard";
 
 const DEFAULT_API_KEY = "KAPI-6789ADACCC1091EFDAB55414";
 const API_BASE = "https://api.komputerz.site/api/v1/download";
@@ -668,6 +674,15 @@ function App() {
 
   const resultRef = useRef<HTMLDivElement | null>(null);
   const urlInputRef = useRef<HTMLInputElement | null>(null);
+  const historyRef = useRef<HTMLDivElement | null>(null);
+
+  // Smart-paste detection: when the app regains focus we peek at the
+  // clipboard and, if it looks like a fresh URL, surface a banner instead
+  // of silently overwriting whatever the user already has typed.
+  const [detectedClipboard, setDetectedClipboard] = useState<string | null>(
+    null,
+  );
+  const lastDismissedClipboardRef = useRef<string | null>(null);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -730,6 +745,40 @@ function App() {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
+  // Smart-paste detection: when the tab is focused/visible again, peek at
+  // the clipboard and offer the URL via a non-intrusive banner. We never
+  // overwrite the user's input automatically — they have to confirm.
+  useEffect(() => {
+    let cancelled = false;
+    const tryDetect = async () => {
+      // Don't pester users who already have something in the input.
+      if (url) {
+        setDetectedClipboard(null);
+        return;
+      }
+      const text = await readClipboardText();
+      if (cancelled) return;
+      if (!isLikelyUrl(text)) return;
+      // Skip if the user already dismissed this exact URL in this session.
+      if (lastDismissedClipboardRef.current === text) return;
+      // Only surface URLs that match one of our supported platforms.
+      if (!detectPlatformFromUrl(text!)) return;
+      setDetectedClipboard(text);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") tryDetect();
+    };
+    // Run once on mount in case the user pasted before opening the tab.
+    tryDetect();
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", tryDetect);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", tryDetect);
+    };
+  }, [url]);
+
   const isValidUrl = useMemo(() => {
     if (!url) return false;
     try {
@@ -764,9 +813,54 @@ function App() {
   const handlePaste = async () => {
     try {
       const text = await navigator.clipboard.readText();
-      if (text) setUrlSmart(text, { autoDetect: true });
+      if (text) {
+        setUrlSmart(text, { autoDetect: true });
+        haptic("success");
+        // Hide the paste banner if the same URL is now in the input.
+        if (text.trim() === detectedClipboard) {
+          setDetectedClipboard(null);
+        }
+      }
     } catch {
       setError("Tidak bisa akses clipboard. Tempel manual ya.");
+      haptic("error");
+    }
+  };
+
+  /** Accept the URL surfaced by the smart-paste banner. */
+  const handleAcceptDetectedClipboard = () => {
+    if (!detectedClipboard) return;
+    setUrlSmart(detectedClipboard, { autoDetect: true });
+    setDetectedClipboard(null);
+    haptic("success");
+    // Bring the form into view + focus so the user can submit immediately.
+    requestAnimationFrame(() => {
+      urlInputRef.current?.focus({ preventScroll: true });
+      urlInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  };
+
+  /** Dismiss the smart-paste banner and remember the URL so we don't nag again. */
+  const handleDismissDetectedClipboard = () => {
+    lastDismissedClipboardRef.current = detectedClipboard;
+    setDetectedClipboard(null);
+  };
+
+  /** Mobile tab bar handlers. */
+  const handleTabHome = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    requestAnimationFrame(() => urlInputRef.current?.focus({ preventScroll: true }));
+  };
+
+  const handleTabHistory = () => {
+    if (historyRef.current) {
+      historyRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      // Fall back to scrolling to the bottom if history isn't rendered yet.
+      window.scrollTo({
+        top: document.documentElement.scrollHeight,
+        behavior: "smooth",
+      });
     }
   };
 
@@ -786,6 +880,7 @@ function App() {
     try {
       await navigator.clipboard.writeText(text);
       setCopiedIdx(idx);
+      haptic("soft");
       setTimeout(() => setCopiedIdx(null), 1500);
     } catch {
       // ignore
@@ -923,6 +1018,7 @@ function App() {
           data.message ||
             `Gagal memproses (HTTP ${res.status}). Coba pastikan link valid dan publik.`,
         );
+        haptic("warning");
         return;
       }
 
@@ -931,10 +1027,12 @@ function App() {
         setError(
           "API merespons tapi tidak ada link download yang terdeteksi. Coba link publik lain.",
         );
+        haptic("warning");
         return;
       }
       setResult(parsed);
       setResultPlatform(platform);
+      haptic("success");
 
       const previous = history.find((h) => h.url === trimmed);
       const next: HistoryItem = {
@@ -964,6 +1062,7 @@ function App() {
           ? `Gagal request: ${err.message}`
           : "Gagal melakukan request ke API.",
       );
+      haptic("error");
     } finally {
       setLoading(false);
     }
@@ -1315,7 +1414,7 @@ function App() {
       </header>
 
       {/* Hero + Form */}
-      <main className="relative z-10">
+      <main className="relative z-10 pb-24 sm:pb-0">
         <section className="mx-auto max-w-3xl px-5 pb-12 pt-6 md:px-8 md:pt-12">
           <div className="animate-fade-up text-center">
             <h1 className="text-3xl font-black leading-tight tracking-tight sm:text-4xl md:text-5xl">
@@ -1332,10 +1431,10 @@ function App() {
 
           {/* Platform picker */}
           <div
-            className="animate-fade-up scrollbar-thin mt-8 -mx-1 overflow-x-auto px-1 pb-1"
+            className="animate-fade-up mt-8"
             style={{ animationDelay: "0.05s" }}
           >
-            <div className="flex w-max gap-2 sm:w-full sm:grid sm:grid-cols-5 lg:grid-cols-5">
+            <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
               {PLATFORMS.map((p) => {
                 const selected = p.id === platform.id;
                 const Icon = p.icon;
@@ -1343,19 +1442,35 @@ function App() {
                   <button
                     key={p.id}
                     type="button"
-                    onClick={() => setPlatformId(p.id)}
-                    className={`group relative flex min-w-[88px] flex-col items-center gap-1.5 rounded-xl border p-2.5 text-center transition-all ${
+                    onClick={() => {
+                      haptic("tap");
+                      setPlatformId(p.id);
+                    }}
+                    className={`platform-chip group relative flex min-h-[64px] flex-col items-center justify-center gap-1 rounded-xl border p-2 text-center transition-all active:scale-95 sm:min-h-[72px] sm:gap-1.5 sm:p-2.5 ${
                       selected
                         ? "border-transparent bg-gradient-to-br text-white shadow-lg shadow-black/30 " +
                           p.gradient
                         : "border-[rgb(var(--border))] bg-[rgb(var(--bg-2))]/40 text-[rgb(var(--text-2))] hover:border-[rgb(var(--text-2))]/30 hover:text-[rgb(var(--text))]"
                     }`}
                     aria-pressed={selected}
+                    aria-label={`${p.label}${selected ? " (terpilih)" : ""}`}
                   >
-                    <Icon className="h-4 w-4" strokeWidth={2.3} />
-                    <span className="text-[11px] font-semibold leading-tight">
+                    <Icon
+                      className="h-[18px] w-[18px] sm:h-4 sm:w-4"
+                      strokeWidth={selected ? 2.6 : 2.3}
+                    />
+                    <span className="text-[10px] font-semibold leading-tight sm:hidden">
+                      {p.short}
+                    </span>
+                    <span className="hidden text-[11px] font-semibold leading-tight sm:inline">
                       {p.label}
                     </span>
+                    {selected && (
+                      <span
+                        aria-hidden
+                        className="absolute -bottom-1 left-1/2 h-1 w-6 -translate-x-1/2 rounded-full bg-white/80 shadow-sm"
+                      />
+                    )}
                   </button>
                 );
               })}
@@ -1368,6 +1483,29 @@ function App() {
           >
             {platform.description}
           </p>
+
+          {/* Smart paste banner — auto-detects URLs in clipboard on focus */}
+          {detectedClipboard && (
+            <div className="mt-4">
+              <PasteBanner
+                url={detectedClipboard}
+                platformLabel={(() => {
+                  const id = detectPlatformFromUrl(detectedClipboard);
+                  return id ? getPlatform(id).label : undefined;
+                })()}
+                platformGradient={(() => {
+                  const id = detectPlatformFromUrl(detectedClipboard);
+                  return id ? getPlatform(id).gradient : undefined;
+                })()}
+                platformIcon={(() => {
+                  const id = detectPlatformFromUrl(detectedClipboard);
+                  return id ? getPlatform(id).icon : undefined;
+                })()}
+                onAccept={handleAcceptDetectedClipboard}
+                onDismiss={handleDismissDetectedClipboard}
+              />
+            </div>
+          )}
 
           {/* Form card */}
           <form
@@ -1696,7 +1834,7 @@ function App() {
 
           {/* Stats + History */}
           {history.length > 0 && (
-            <div className="mt-10 space-y-5">
+            <div ref={historyRef} className="mt-10 space-y-5 scroll-mt-24">
               {/* Stats card */}
               <section
                 aria-label="Statistik download"
@@ -2192,6 +2330,23 @@ function App() {
         url={qrTarget?.url ?? null}
         title={qrTarget?.title}
         onClose={() => setQrTarget(null)}
+      />
+
+      {/* Floating "scroll to top" button with progress ring */}
+      <ScrollToTop />
+
+      {/* PWA install prompt — only fires when the browser supports it */}
+      <InstallPrompt />
+
+      {/* Mobile-only bottom navigation. Hidden on tablets and up. */}
+      <MobileTabBar
+        active="home"
+        historyCount={history.length}
+        hasHistory={history.length > 0}
+        onHome={handleTabHome}
+        onPaste={handlePaste}
+        onHistory={handleTabHistory}
+        onMenu={() => setShowCommand(true)}
       />
     </div>
   );
